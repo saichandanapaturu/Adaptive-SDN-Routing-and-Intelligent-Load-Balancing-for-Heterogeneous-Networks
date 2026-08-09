@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useLiveNetworkData } from '@/hooks/useLiveNetworkData';
-import { NetworkTopology } from '@/components/NetworkTopology';
+import { ImprovedNetworkTopology } from '@/components/ImprovedNetworkTopology';
+import { CustomTopologyBuilder } from '@/components/CustomTopologyBuilder';
 import { PortStatistics } from '@/components/PortStatistics';
 import { RerouteLog } from '@/components/RerouteLog';
 import { PredictionPanel } from '@/components/PredictionPanel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { Activity, AlertTriangle, Zap, Clock } from 'lucide-react';
 
 export default function Home() {
@@ -25,6 +27,7 @@ export default function Home() {
 
   const stats = getNetworkStats();
   const [activeTab, setActiveTab] = useState('monitor');
+  const [topologyMode, setTopologyMode] = useState<'dashboard' | 'custom'>('dashboard');
 
   const handleSourceChange = (nodeId: string) => {
     updateRoute(nodeId, selectedDestination);
@@ -135,77 +138,106 @@ export default function Home() {
 
           {/* Monitor Tab */}
           <TabsContent value="monitor" className="space-y-6 mt-6">
-            <Card className="bg-slate-900/50 border-slate-800">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold">Network Topology</CardTitle>
-                <CardDescription>Real-time network visualization with packet flow</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {/* Source/Destination Selector */}
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-300 mb-2">
-                      Source Node
-                    </label>
-                    <Select value={selectedSource} onValueChange={handleSourceChange}>
-                      <SelectTrigger className="bg-slate-800 border-slate-700">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-800 border-slate-700">
-                        {nodes.map(node => (
-                          <SelectItem key={node.id} value={node.id}>
-                            {node.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-300 mb-2">
-                      Destination Node
-                    </label>
-                    <Select value={selectedDestination} onValueChange={handleDestinationChange}>
-                      <SelectTrigger className="bg-slate-800 border-slate-700">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-800 border-slate-700">
-                        {nodes.map(node => (
-                          <SelectItem key={node.id} value={node.id}>
-                            {node.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+            {/* Topology Mode Toggle */}
+            <div className="flex gap-3">
+              <Button
+                onClick={() => setTopologyMode('dashboard')}
+                className={`flex-1 font-semibold ${
+                  topologyMode === 'dashboard'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                📊 Dashboard Topology
+              </Button>
+              <Button
+                onClick={() => setTopologyMode('custom')}
+                className={`flex-1 font-semibold ${
+                  topologyMode === 'custom'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                🔧 Custom Topology
+              </Button>
+            </div>
 
-                {/* Topology Canvas */}
-                <NetworkTopology
-                  nodes={nodes}
-                  links={links}
-                  packetFlows={packetFlows}
-                  selectedSource={selectedSource}
-                  selectedDestination={selectedDestination}
-                  onNodeSelect={handleNodeSelect}
-                />
+            {/* Dashboard Topology Mode */}
+            {topologyMode === 'dashboard' ? (
+              <Card className="bg-slate-900/50 border-slate-800">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold">Network Topology</CardTitle>
+                  <CardDescription>Real-time network visualization with packet flow</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Source/Destination Selector */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-300 mb-2">
+                        Source Node
+                      </label>
+                      <Select value={selectedSource} onValueChange={handleSourceChange}>
+                        <SelectTrigger className="bg-slate-800 border-slate-700">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                          {nodes.map(node => (
+                            <SelectItem key={node.id} value={node.id}>
+                              {node.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-300 mb-2">
+                        Destination Node
+                      </label>
+                      <Select value={selectedDestination} onValueChange={handleDestinationChange}>
+                        <SelectTrigger className="bg-slate-800 border-slate-700">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                          {nodes.map(node => (
+                            <SelectItem key={node.id} value={node.id}>
+                              {node.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
-                {/* Legend */}
-                <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                    <span className="text-sm text-slate-400">Healthy</span>
+                  {/* Topology Canvas */}
+                  <ImprovedNetworkTopology
+                    nodes={nodes}
+                    links={links}
+                    packetFlows={packetFlows}
+                    selectedSource={selectedSource}
+                    selectedDestination={selectedDestination}
+                    onNodeSelect={handleNodeSelect}
+                  />
+
+                  {/* Legend */}
+                  <div className="grid grid-cols-3 gap-4 pt-6 border-t border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <span className="text-sm text-slate-400">Healthy</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                      <span className="text-sm text-slate-400">Warning</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <span className="text-sm text-slate-400">Critical</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-                    <span className="text-sm text-slate-400">Warning</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                    <span className="text-sm text-slate-400">Critical</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            ) : (
+              <CustomTopologyBuilder />
+            )}
 
             {/* Traffic Heatmap */}
             <Card className="bg-slate-900/50 border-slate-800">
