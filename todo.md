@@ -10779,3 +10779,10 @@ The dashboard now presents a dark fixed sidebar at desktop widths with the AIFE 
 - [ ] Make the AIFE logo toggle the expanded menu open and closed.
 - [ ] Preserve tooltips, keyboard focus, active states, and responsive behavior.
 - [ ] Verify live dashboard content and publish the result.
+
+## Remove topology switcher row
+
+- [ ] Remove only the Dashboard Topology / Custom Topology button row from the main dashboard.
+- [ ] Keep sidebar topology controls, source/destination routing, live packets, and all telemetry panels unchanged.
+- [ ] Verify typecheck, build, and visual layout.
+- [ ] Publish the focused cleanup.

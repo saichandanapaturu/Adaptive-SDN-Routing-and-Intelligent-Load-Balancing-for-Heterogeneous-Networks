@@ -213,30 +213,6 @@ export default function Home() {
 
           {/* Monitor Tab */}
           <TabsContent value="monitor" className="mt-0 min-w-0 flex-1 space-y-6">
-            {/* Topology Mode Toggle */}
-            <div className="flex gap-3">
-              <Button
-                onClick={() => setIsUsingCustom(false)}
-                className={`flex-1 font-semibold ${
-                  !isUsingCustom
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <Network className="mr-2 h-4 w-4" /> Dashboard Topology
-              </Button>
-              <Button
-                onClick={() => setIsUsingCustom(true)}
-                className={`flex-1 font-semibold ${
-                  isUsingCustom
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <GitBranch className="mr-2 h-4 w-4" /> Custom Topology
-              </Button>
-            </div>
-
             {/* Dashboard/Custom Topology Mode */}
             {!isUsingCustom ? (
               <Card className="bg-slate-900/50 border-slate-800">
