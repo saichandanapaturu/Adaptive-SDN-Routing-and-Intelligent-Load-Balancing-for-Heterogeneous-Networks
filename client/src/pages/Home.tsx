@@ -32,6 +32,7 @@ export default function Home() {
 
   const stats = getNetworkStats();
   const [activeTab, setActiveTab] = useState('monitor');
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
 
   const handleSourceChange = (nodeId: string) => {
     updateRoute(nodeId, selectedDestination);
@@ -51,86 +52,75 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#080b12] text-slate-100">
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-72 flex-col border-r border-white/[0.06] bg-[#1b1b1b] text-slate-200 lg:flex">
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-400/10 text-emerald-300">
-              <svg viewBox="0 0 48 48" className="h-6 w-6" role="img" aria-label="AIFE mark">
+      {isSidebarExpanded && <button type="button" className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setIsSidebarExpanded(false)} aria-label="Close navigation menu" />}
+      <aside className={`fixed inset-y-0 left-0 z-50 flex-col border-r border-cyan-500/15 bg-[#0b1018] text-slate-200 shadow-[12px_0_40px_rgba(0,0,0,0.22)] transition-[width] duration-200 ${isSidebarExpanded ? 'flex w-72' : 'hidden w-[92px] lg:flex'}`}>
+        <div className={`flex min-h-[86px] items-center border-b border-cyan-500/15 ${isSidebarExpanded ? 'justify-between px-4' : 'justify-center px-2'}`}>
+          <button type="button" onClick={() => setIsSidebarExpanded((open) => !open)} className="group flex items-center gap-3 rounded-md p-1.5 transition hover:bg-cyan-400/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70" aria-label={isSidebarExpanded ? 'Collapse AIFE navigation menu' : 'Expand AIFE navigation menu'} aria-expanded={isSidebarExpanded}>
+            <span className="relative flex h-12 w-12 shrink-0 items-center justify-center border border-cyan-400/60 bg-cyan-400/[0.08] text-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.08)] transition group-hover:border-cyan-200">
+              <span className="h-3 w-3 bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,0.85)]" aria-hidden="true" />
+              <svg viewBox="0 0 48 48" className="absolute h-8 w-8 opacity-0" role="img" aria-label="AIFE mark">
                 <path d="M24 8 10 34h28L24 8Z" fill="none" stroke="currentColor" strokeWidth="2.2" />
                 <circle cx="24" cy="8" r="3.2" fill="currentColor" />
                 <circle cx="10" cy="34" r="3.2" fill="currentColor" />
                 <circle cx="38" cy="34" r="3.2" fill="currentColor" />
               </svg>
-            </div>
-            <div>
-              <p className="font-mono text-lg font-bold tracking-tight text-white">AIFE</p>
-              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">Control plane</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-slate-400">
-            <button type="button" className="rounded-md p-2 transition hover:bg-white/[0.06] hover:text-white" aria-label="Search">
-              <Search className="h-4 w-4" />
-            </button>
-            <button type="button" className="rounded-md p-2 transition hover:bg-white/[0.06] hover:text-white" aria-label="Sidebar layout">
-              <PanelLeft className="h-4 w-4" />
-            </button>
-          </div>
+            </span>
+            {isSidebarExpanded && <span className="text-left"><span className="block font-mono text-lg font-bold tracking-tight text-white">AIFE</span><span className="block font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">Control plane</span></span>}
+          </button>
+          {isSidebarExpanded && <div className="flex items-center gap-1 text-slate-400"><button type="button" className="rounded-md p-2 transition hover:bg-white/[0.06] hover:text-white" aria-label="Search dashboard"><Search className="h-4 w-4" /></button><button type="button" onClick={() => setIsSidebarExpanded(false)} className="rounded-md p-2 transition hover:bg-white/[0.06] hover:text-white" aria-label="Collapse sidebar"><PanelLeft className="h-4 w-4" /></button></div>}
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Dashboard navigation">
-          <div className="space-y-1">
-            <button type="button" onClick={() => setActiveTab('monitor')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'monitor' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <Activity className="h-4 w-4" />
-              <span>Monitor</span>
+        <nav className={`flex-1 overflow-y-auto py-5 ${isSidebarExpanded ? 'px-3' : 'px-2'}`} aria-label="Dashboard navigation">
+          <div className="space-y-3">
+            <button type="button" onClick={() => setActiveTab('monitor')} title="Monitor" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${activeTab === 'monitor' ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${activeTab === 'monitor' ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><Activity className="h-4 w-4" /></span>
+              {isSidebarExpanded && <span>Monitor</span>}
             </button>
-            <button type="button" onClick={() => setActiveTab('statistics')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'statistics' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <BarChart3 className="h-4 w-4" />
-              <span>Statistics</span>
+            <button type="button" onClick={() => setActiveTab('statistics')} title="Statistics" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${activeTab === 'statistics' ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${activeTab === 'statistics' ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><BarChart3 className="h-4 w-4" /></span>
+              {isSidebarExpanded && <span>Statistics</span>}
             </button>
-            <button type="button" onClick={() => setActiveTab('prediction')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'prediction' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <BrainCircuit className="h-4 w-4" />
-              <span>Prediction</span>
+            <button type="button" onClick={() => setActiveTab('prediction')} title="Prediction" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${activeTab === 'prediction' ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${activeTab === 'prediction' ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><BrainCircuit className="h-4 w-4" /></span>
+              {isSidebarExpanded && <span>Prediction</span>}
             </button>
-            <button type="button" onClick={() => setActiveTab('reroute')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'reroute' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <ScrollText className="h-4 w-4" />
-              <span>Reroute Log</span>
+            <button type="button" onClick={() => setActiveTab('reroute')} title="Reroute Log" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${activeTab === 'reroute' ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${activeTab === 'reroute' ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><ScrollText className="h-4 w-4" /></span>
+              {isSidebarExpanded && <span>Reroute Log</span>}
             </button>
           </div>
 
-          <div className="mt-9 px-3 text-xs font-medium text-slate-500">
-            <span>Topology</span>
+          {isSidebarExpanded && <div className="mt-9 px-2 text-[10px] font-mono uppercase tracking-[0.2em] text-slate-600">Topology</div>}
+          <div className="mt-3 space-y-3">
+            <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(false); }} title="Dashboard Topology" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${!isUsingCustom ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${!isUsingCustom ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><Network className="h-4 w-4" /></span>
+              {isSidebarExpanded && <span>Dashboard Topology</span>}
+            </button>
+            <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(true); }} title="Custom Topology" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${isUsingCustom ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${isUsingCustom ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><GitBranch className="h-4 w-4" /></span>
+              {isSidebarExpanded && <span>Custom Topology</span>}
+            </button>
           </div>
-          <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(false); }} className={`mt-3 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${!isUsingCustom ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-            <Network className="h-4 w-4" />
-            <span>Dashboard Topology</span>
-          </button>
-          <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(true); }} className={`mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${isUsingCustom ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-            <GitBranch className="h-4 w-4" />
-            <span>Custom Topology</span>
-          </button>
         </nav>
 
-        <div className="border-t border-white/[0.06] px-4 py-4">
-          <div className="flex items-center gap-2 text-xs text-emerald-300">
-            <CircleDot className="h-3.5 w-3.5" />
-            <span className="font-mono uppercase tracking-[0.18em]">Live telemetry</span>
-          </div>
-        </div>
+        <button type="button" onClick={() => setIsSidebarExpanded((open) => !open)} className={`border-t border-cyan-500/15 py-5 text-cyan-300 transition hover:bg-cyan-400/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-4 text-left' : 'px-2 text-center'}`} aria-label="Toggle navigation menu">
+          <span className="flex items-center justify-center gap-2 text-[10px] font-mono uppercase tracking-[0.18em]"><CircleDot className="h-3.5 w-3.5" />{isSidebarExpanded && <span>Live telemetry</span>}</span>
+        </button>
       </aside>
 
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm lg:ml-72">
+      <header className={`sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm transition-[margin] duration-200 ${isSidebarExpanded ? 'lg:ml-72' : 'lg:ml-[92px]'}`}>
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="relative flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.18)]" aria-label="AIFE network mark">
+              <button type="button" onClick={() => setIsSidebarExpanded((open) => !open)} className="relative flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.18)] transition hover:border-cyan-300/70 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70" aria-label="Toggle AIFE navigation menu" aria-expanded={isSidebarExpanded}>
                 <svg viewBox="0 0 48 48" className="h-8 w-8" role="img" aria-hidden="true">
                   <path d="M24 8 10 34h28L24 8Z" fill="none" stroke="currentColor" strokeWidth="2.2" />
                   <circle cx="24" cy="8" r="3.2" fill="currentColor" />
                   <circle cx="10" cy="34" r="3.2" fill="currentColor" />
                   <circle cx="38" cy="34" r="3.2" fill="currentColor" />
                 </svg>
-              </div>
+              </button>
               <div>
                 <h1 className="font-mono text-2xl font-bold tracking-tight text-white">
                   AIFE <span className="text-emerald-400">/</span> Dashboard
@@ -151,7 +141,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-none px-4 py-6 space-y-8 sm:px-6 lg:ml-72 lg:px-8 lg:py-8">
+      <main className={`max-w-none px-4 py-6 space-y-8 transition-[margin] duration-200 sm:px-6 lg:px-8 lg:py-8 ${isSidebarExpanded ? 'lg:ml-72' : 'lg:ml-[92px]'}`}>
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-slate-900/50 border-slate-800">
@@ -400,7 +390,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-12 border-t border-slate-800 bg-slate-900/50 lg:ml-72">
+      <footer className={`mt-12 border-t border-slate-800 bg-slate-900/50 transition-[margin] duration-200 ${isSidebarExpanded ? 'lg:ml-72' : 'lg:ml-[92px]'}`}>
         <div className="max-w-7xl mx-auto px-6 py-6 text-center text-sm text-slate-500">
           Made with Manus
         </div>

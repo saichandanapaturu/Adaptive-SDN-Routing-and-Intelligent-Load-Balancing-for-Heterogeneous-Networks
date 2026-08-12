@@ -10771,3 +10771,11 @@ The dashboard now presents a dark fixed sidebar at desktop widths with the AIFE 
 - [ ] Keep Projects and Tasks sections tied to AIFEdash content.
 - [ ] Preserve responsive mobile navigation and all live dashboard behavior.
 - [ ] Run typecheck/build, verify, and publish.
+
+## Compact icon rail navigation
+
+- [ ] Inspect the supplied icon-rail reference at readable scale.
+- [ ] Add compact square icon buttons for Monitor, Statistics, Prediction, Reroute Log, Dashboard Topology, and Custom Topology.
+- [ ] Make the AIFE logo toggle the expanded menu open and closed.
+- [ ] Preserve tooltips, keyboard focus, active states, and responsive behavior.
+- [ ] Verify live dashboard content and publish the result.
