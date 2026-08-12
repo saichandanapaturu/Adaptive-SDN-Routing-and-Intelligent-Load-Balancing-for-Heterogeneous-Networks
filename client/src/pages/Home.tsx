@@ -320,7 +320,7 @@ export default function Home() {
 
           {/* Prediction Tab */}
           <TabsContent value="prediction" className="mt-6">
-            <PredictionPanel predictions={predictions} />
+            <PredictionPanel predictions={predictions} links={links} rerouteEvents={rerouteEvents} />
           </TabsContent>
 
           {/* Reroute Log Tab */}
