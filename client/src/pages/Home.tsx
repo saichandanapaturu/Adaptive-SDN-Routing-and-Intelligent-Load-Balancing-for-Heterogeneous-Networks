@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Activity, AlertTriangle, BarChart3, BrainCircuit, BookOpen, Bot, CircleDot, Clock, FolderPlus, GitBranch, ListChecks, Network, PanelLeft, PencilLine, Plus, ScrollText, Search, SlidersHorizontal, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, BrainCircuit, CircleDot, Clock, GitBranch, Network, PanelLeft, ScrollText, Search, Zap } from 'lucide-react';
 
 export default function Home() {
   const {
@@ -80,47 +80,33 @@ export default function Home() {
         <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Dashboard navigation">
           <div className="space-y-1">
             <button type="button" onClick={() => setActiveTab('monitor')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'monitor' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <PencilLine className="h-4 w-4" />
-              <span>New task</span>
-            </button>
-            <button type="button" onClick={() => setActiveTab('prediction')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'prediction' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <Bot className="h-4 w-4" />
-              <span>Agent</span>
+              <Activity className="h-4 w-4" />
+              <span>Monitor</span>
             </button>
             <button type="button" onClick={() => setActiveTab('statistics')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'statistics' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <Network className="h-4 w-4" />
-              <span>Plugins</span>
+              <BarChart3 className="h-4 w-4" />
+              <span>Statistics</span>
+            </button>
+            <button type="button" onClick={() => setActiveTab('prediction')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'prediction' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
+              <BrainCircuit className="h-4 w-4" />
+              <span>Prediction</span>
             </button>
             <button type="button" onClick={() => setActiveTab('reroute')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'reroute' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <Clock className="h-4 w-4" />
-              <span>Scheduled</span>
-            </button>
-            <button type="button" onClick={() => setActiveTab('monitor')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'monitor' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
-              <BookOpen className="h-4 w-4" />
-              <span>Library</span>
+              <ScrollText className="h-4 w-4" />
+              <span>Reroute Log</span>
             </button>
           </div>
 
-          <div className="mt-9 flex items-center justify-between px-3 text-xs font-medium text-slate-500">
-            <span>Projects</span>
-            <Plus className="h-4 w-4" />
+          <div className="mt-9 px-3 text-xs font-medium text-slate-500">
+            <span>Topology</span>
           </div>
-          <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(false); }} className="mt-3 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.05] hover:text-white">
-            <FolderPlus className="h-4 w-4" />
-            <span>AIFE live dashboard</span>
+          <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(false); }} className={`mt-3 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${!isUsingCustom ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
+            <Network className="h-4 w-4" />
+            <span>Dashboard Topology</span>
           </button>
-          <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(true); }} className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.05] hover:text-white">
-            <FolderPlus className="h-4 w-4" />
-            <span>New topology</span>
-          </button>
-
-          <div className="mt-9 flex items-center justify-between px-3 text-xs font-medium text-slate-500">
-            <span>Tasks</span>
-            <SlidersHorizontal className="h-4 w-4" />
-          </div>
-          <button type="button" onClick={() => setActiveTab('monitor')} className="mt-3 flex w-full items-center gap-3 rounded-lg bg-white/[0.1] px-3 py-3 text-left text-sm text-white shadow-sm transition hover:bg-white/[0.14]">
-            <ListChecks className="h-4 w-4 text-emerald-300" />
-            <span className="min-w-0 truncate">Integrate live data and packet movement</span>
+          <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(true); }} className={`mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${isUsingCustom ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
+            <GitBranch className="h-4 w-4" />
+            <span>Custom Topology</span>
           </button>
         </nav>
 

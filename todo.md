@@ -10762,3 +10762,12 @@ The dashboard now presents a dark fixed sidebar at desktop widths with the AIFE 
 - [x] Preserve navigation to existing dashboard sections.
 - [x] Preserve topology, live metrics, and packet movement.
 - [x] Verify desktop and mobile responsive behavior.
+
+## Correct sidebar labels
+
+- [ ] Remove unrelated New task, Agent, Plugins, Scheduled, and Library labels.
+- [ ] Use Monitor, Statistics, Prediction, and Reroute Log as the primary sidebar buttons.
+- [ ] Keep the reference-inspired dark grouped layout and selected-item styling.
+- [ ] Keep Projects and Tasks sections tied to AIFEdash content.
+- [ ] Preserve responsive mobile navigation and all live dashboard behavior.
+- [ ] Run typecheck/build, verify, and publish.
