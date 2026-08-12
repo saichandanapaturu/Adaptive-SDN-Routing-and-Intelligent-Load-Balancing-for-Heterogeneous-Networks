@@ -10623,3 +10623,23 @@ The warning was traced to observing the canvas while synchronously changing its 
 - [x] Run typecheck/build.
 - [x] Restart and verify the preview.
 - [x] Confirm no new warning after the fix.
+
+## Published packet-animation fix
+
+- [ ] Trace whether packet progress changes are visible to the canvas renderer.
+- [ ] Ensure the topology canvas repaints continuously while packet flows are active.
+- [ ] Preserve custom source/destination routes and live telemetry values.
+- [ ] Prevent duplicate animation loops and clean up on unmount.
+- [ ] Run typecheck and production build.
+- [ ] Verify visible packet movement in the preview and published build.
+- [ ] Save and publish the fix.
+
+## Packet animation fix verification result
+
+The topology now interpolates packet positions from elapsed time on a requestAnimationFrame loop whenever active packet flows exist, while the telemetry interval continues to create and remove flows. Cleanup cancels both resize and packet animation frames, preventing duplicates. Typecheck and production build passed, the restarted preview visibly shows a cyan packet on the route, and no new runtime errors appeared in the latest console entries. Direct browser verification of the published domain redirected to Manus authentication, so the final published result will be validated through the new auto-published checkpoint URL.
+
+- [x] Trace packet progress and canvas repaint behavior.
+- [x] Add continuous packet repainting.
+- [x] Preserve route and telemetry behavior.
+- [x] Run typecheck/build and restart.
+- [x] Verify packet presence in the refreshed preview.

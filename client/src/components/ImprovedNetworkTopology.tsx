@@ -305,7 +305,13 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
       // Packets remain bright and precise without a large shadow blur that makes the canvas look soft.
       packetFlows.forEach(flow => {
         if (flow.path.length < 2) return;
-        const progress = clamp(flow.progress / 100, 0, 0.9999);
+        // Use wall-clock progress for smooth movement between telemetry ticks.
+        // React supplies new flows roughly once per second; the canvas now
+        // interpolates their position on every animation frame.
+        const elapsedProgress = flow.duration > 0
+          ? ((Date.now() - flow.startTime) / flow.duration) * 100
+          : flow.progress;
+        const progress = clamp(elapsedProgress / 100, 0, 0.9999);
         const segmentIndex = Math.floor(progress * (flow.path.length - 1));
         const segmentProgress = progress * (flow.path.length - 1) - segmentIndex;
         const source = positions.get(flow.path[segmentIndex]);
@@ -331,6 +337,7 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
     };
 
     let animationFrame = 0;
+    let packetAnimationFrame = 0;
     const scheduleRender = () => {
       if (animationFrame) return;
       animationFrame = window.requestAnimationFrame(() => {
@@ -350,10 +357,22 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
     window.addEventListener('resize', scheduleRender, { passive: true });
     scheduleRender();
 
+    // Keep the packet layer moving continuously in production builds. The
+    // telemetry interval creates/removes flows, while this lightweight loop
+    // interpolates their position smoothly between those updates.
+    if (packetFlows.length > 0) {
+      const animatePackets = () => {
+        render();
+        packetAnimationFrame = window.requestAnimationFrame(animatePackets);
+      };
+      packetAnimationFrame = window.requestAnimationFrame(animatePackets);
+    }
+
     return () => {
       observer?.disconnect();
       window.removeEventListener('resize', scheduleRender);
       if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      if (packetAnimationFrame) window.cancelAnimationFrame(packetAnimationFrame);
     };
   }, [links, nodes, packetFlows, selectedDestination, selectedSource]);
 
