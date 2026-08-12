@@ -10725,3 +10725,21 @@ The graph now uses a dedicated dark chart surface, explicit 0–100 scale labels
 - [x] Add current-value markers and accessible chart labeling.
 - [x] Verify responsive dashboard preview.
 - [x] Confirm no new console errors.
+
+## Left-side dashboard navigation
+
+- [ ] Inspect current tab navigation and page layout.
+- [ ] Move Monitor, Statistics, Prediction, and Reroute Log into a vertical left-side button rail.
+- [ ] Preserve active tab styling and all existing tab content.
+- [ ] Keep the rail responsive so it remains usable on narrow screens.
+- [ ] Run typecheck/build and verify navigation states.
+- [ ] Publish the navigation-only update.
+
+## Left-side navigation verification
+
+The four existing sections now render as a vertical left-side rail on desktop: Monitor, Statistics, Prediction, and Reroute Log. The active button retains the existing active-state treatment, and the selected tab content remains on the right without changing its data flow. On mobile widths, the same navigation collapses into a horizontally scrollable button row so the sections remain accessible. Typecheck and production build passed, the frontend restarted successfully, and the desktop preview clearly shows the left rail.
+
+- [x] Move navigation buttons to the left on desktop.
+- [x] Preserve active state and tab contents.
+- [x] Preserve responsive usability on mobile.
+- [x] Run typecheck/build and verify preview.

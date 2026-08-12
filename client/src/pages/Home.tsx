@@ -138,23 +138,24 @@ export default function Home() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-slate-900/50 border border-slate-800">
-            <TabsTrigger value="monitor" className="data-[state=active]:bg-slate-800">
+          <div className="flex flex-col items-stretch gap-6 md:flex-row md:items-start">
+            <TabsList className="flex w-full flex-row gap-1 overflow-x-auto bg-slate-900/50 border border-slate-800 p-1 md:sticky md:top-24 md:h-fit md:w-48 md:shrink-0 md:flex-col md:items-stretch md:gap-2 md:p-2">
+            <TabsTrigger value="monitor" className="justify-start text-left data-[state=active]:bg-slate-800">
               Monitor
             </TabsTrigger>
-            <TabsTrigger value="statistics" className="data-[state=active]:bg-slate-800">
+            <TabsTrigger value="statistics" className="justify-start text-left data-[state=active]:bg-slate-800">
               Statistics
             </TabsTrigger>
-            <TabsTrigger value="prediction" className="data-[state=active]:bg-slate-800">
+            <TabsTrigger value="prediction" className="justify-start text-left data-[state=active]:bg-slate-800">
               Prediction
             </TabsTrigger>
-            <TabsTrigger value="reroute" className="data-[state=active]:bg-slate-800">
+            <TabsTrigger value="reroute" className="justify-start text-left data-[state=active]:bg-slate-800">
               Reroute Log
             </TabsTrigger>
           </TabsList>
 
           {/* Monitor Tab */}
-          <TabsContent value="monitor" className="space-y-6 mt-6">
+          <TabsContent value="monitor" className="mt-0 min-w-0 flex-1 space-y-6">
             {/* Topology Mode Toggle */}
             <div className="flex gap-3">
               <Button
@@ -314,19 +315,20 @@ export default function Home() {
           </TabsContent>
 
           {/* Statistics Tab */}
-          <TabsContent value="statistics" className="mt-6">
+          <TabsContent value="statistics" className="mt-0 min-w-0 flex-1">
             <PortStatistics stats={portStats} />
           </TabsContent>
 
           {/* Prediction Tab */}
-          <TabsContent value="prediction" className="mt-6">
+          <TabsContent value="prediction" className="mt-0 min-w-0 flex-1">
             <PredictionPanel predictions={predictions} links={links} rerouteEvents={rerouteEvents} />
           </TabsContent>
 
           {/* Reroute Log Tab */}
-          <TabsContent value="reroute" className="mt-6">
+          <TabsContent value="reroute" className="mt-0 min-w-0 flex-1">
             <RerouteLog events={rerouteEvents} />
           </TabsContent>
+          </div>
         </Tabs>
       </main>
 
