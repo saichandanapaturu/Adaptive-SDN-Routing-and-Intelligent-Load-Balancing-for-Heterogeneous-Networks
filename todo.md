@@ -10643,3 +10643,23 @@ The topology now interpolates packet positions from elapsed time on a requestAni
 - [x] Preserve route and telemetry behavior.
 - [x] Run typecheck/build and restart.
 - [x] Verify packet presence in the refreshed preview.
+
+## Published packet flow still failing
+
+- [ ] Confirm which published URL/version the user is opening.
+- [ ] Verify packet flows are actually created when a valid route exists.
+- [ ] Verify the canvas receives valid packet paths and progress values.
+- [ ] Remove any probabilistic or route-dependent condition that can leave the published canvas empty.
+- [ ] Make one clearly visible packet start on every active route, then replenish it continuously.
+- [ ] Verify packets move across the rendered path over time.
+- [ ] Run typecheck/build and publish only after deployed behavior is verified.
+
+## Deterministic packet-emission verification
+
+The previous implementation could leave the published canvas without a packet because creation depended on a random emission check and route changes cleared all flows. The new implementation creates an initial packet immediately for every valid route, restores a packet after the previous one expires, and immediately seeds a packet when the user changes source or destination. The restarted preview visibly shows a bright packet on the selected route. Typecheck and production build passed, and the latest console entries contain only historical ResizeObserver errors from before the fix. The published project URL is the current AIFE project domain, not the older legacy domain.
+
+- [x] Remove random-only first-packet behavior.
+- [x] Seed packets on topology initialization and route changes.
+- [x] Replenish packets after expiration.
+- [x] Verify visible packet in the refreshed preview.
+- [x] Run typecheck/build and restart.

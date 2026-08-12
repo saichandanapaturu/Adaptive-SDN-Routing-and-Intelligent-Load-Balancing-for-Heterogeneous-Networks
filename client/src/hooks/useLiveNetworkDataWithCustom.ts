@@ -197,6 +197,22 @@ function initialRoute(nodes: NetworkNode[], links: NetworkLink[]) {
   };
 }
 
+function createPacketFlow(source: string, destination: string, links: NetworkLink[]): PacketFlow | null {
+  const path = findPath(source, destination, links);
+  if (path.length < 2) return null;
+
+  const now = Date.now();
+  return {
+    id: `packet-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    source,
+    destination,
+    path,
+    progress: 0,
+    startTime: now,
+    duration: 2200 + Math.random() * 1800,
+  };
+}
+
 export function useLiveNetworkDataWithCustom() {
   const { customNodes, customLinks } = useTopologyContext();
   const hasCustomTopology = customNodes.length > 0;
@@ -221,12 +237,16 @@ export function useLiveNetworkDataWithCustom() {
   );
 
   const initial = useMemo(() => initialRoute(activeNodes, activeLinks), [activeLinks, activeNodes]);
+  const initialPacketFlows = useMemo(() => {
+    const firstFlow = createPacketFlow(initial.source, initial.destination, activeLinks);
+    return firstFlow ? [firstFlow] : [];
+  }, [activeLinks, initial.destination, initial.source]);
   const [nodes, setNodes] = useState<NetworkNode[]>(activeNodes);
   const [links, setLinks] = useState<NetworkLink[]>(activeLinks);
   const [portStats, setPortStats] = useState<PortStat[]>(() => buildPortStats(activeNodes, activeLinks));
   const [rerouteEvents, setRerouteEvents] = useState<RerouteEvent[]>([]);
   const [predictions, setPredictions] = useState<PredictionData[]>(() => [buildPrediction(activeLinks)]);
-  const [packetFlows, setPacketFlows] = useState<PacketFlow[]>([]);
+  const [packetFlows, setPacketFlows] = useState<PacketFlow[]>(() => initialPacketFlows);
   const [selectedSource, setSelectedSource] = useState(initial.source);
   const [selectedDestination, setSelectedDestination] = useState(initial.destination);
   const [tick, setTick] = useState(0);
@@ -249,7 +269,8 @@ export function useLiveNetworkDataWithCustom() {
     setPortStats(buildPortStats(activeNodes, activeLinks));
     setRerouteEvents([]);
     setPredictions([buildPrediction(activeLinks)]);
-    setPacketFlows([]);
+    const resetFlow = createPacketFlow(nextRoute.source, nextRoute.destination, activeLinks);
+    setPacketFlows(resetFlow ? [resetFlow] : []);
     setSelectedSource(nextRoute.source);
     setSelectedDestination(nextRoute.destination);
     tickRef.current = 0;
@@ -296,16 +317,15 @@ export function useLiveNetworkDataWithCustom() {
           .filter(flow => flow.progress < 100);
         const path = findPath(selectedSource, selectedDestination, nextLinks);
 
-        if (updated.length < 6 && path.length > 1 && Math.random() < 0.72) {
-          updated.push({
-            id: `packet-${now}-${Math.random().toString(36).slice(2, 7)}`,
-            source: selectedSource,
-            destination: selectedDestination,
-            path,
-            progress: 0,
-            startTime: now,
-            duration: 2200 + Math.random() * 1800,
-          });
+        // Always replenish a valid route when the last packet expires. This
+        // guarantees visible activity in production instead of depending on a
+        // random tick winning the emission check.
+        if (updated.length === 0 && path.length > 1) {
+          const firstFlow = createPacketFlow(selectedSource, selectedDestination, nextLinks);
+          if (firstFlow) updated.push(firstFlow);
+        } else if (updated.length < 6 && path.length > 1 && Math.random() < 0.72) {
+          const nextFlow = createPacketFlow(selectedSource, selectedDestination, nextLinks);
+          if (nextFlow) updated.push(nextFlow);
         }
 
         return updated;
@@ -320,7 +340,8 @@ export function useLiveNetworkDataWithCustom() {
     const validDestination = activeNodeIds.has(destination) ? destination : activeNodes[1]?.id ?? '';
     setSelectedSource(validSource);
     setSelectedDestination(validDestination);
-    setPacketFlows([]);
+    const nextFlow = createPacketFlow(validSource, validDestination, activeLinks);
+    setPacketFlows(nextFlow ? [nextFlow] : []);
   };
 
   const getNetworkStats = () => ({
