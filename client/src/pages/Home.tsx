@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Activity, AlertTriangle, Zap, Clock, Network, GitBranch } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, BrainCircuit, BookOpen, Bot, CircleDot, Clock, FolderPlus, GitBranch, ListChecks, Network, PanelLeft, PencilLine, Plus, ScrollText, Search, SlidersHorizontal, Zap } from 'lucide-react';
 
 export default function Home() {
   const {
@@ -50,9 +50,90 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-[#080b12] text-slate-100">
+      <aside className="fixed inset-y-0 left-0 z-50 hidden w-72 flex-col border-r border-white/[0.06] bg-[#1b1b1b] text-slate-200 lg:flex">
+        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-400/10 text-emerald-300">
+              <svg viewBox="0 0 48 48" className="h-6 w-6" role="img" aria-label="AIFE mark">
+                <path d="M24 8 10 34h28L24 8Z" fill="none" stroke="currentColor" strokeWidth="2.2" />
+                <circle cx="24" cy="8" r="3.2" fill="currentColor" />
+                <circle cx="10" cy="34" r="3.2" fill="currentColor" />
+                <circle cx="38" cy="34" r="3.2" fill="currentColor" />
+              </svg>
+            </div>
+            <div>
+              <p className="font-mono text-lg font-bold tracking-tight text-white">AIFE</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">Control plane</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 text-slate-400">
+            <button type="button" className="rounded-md p-2 transition hover:bg-white/[0.06] hover:text-white" aria-label="Search">
+              <Search className="h-4 w-4" />
+            </button>
+            <button type="button" className="rounded-md p-2 transition hover:bg-white/[0.06] hover:text-white" aria-label="Sidebar layout">
+              <PanelLeft className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Dashboard navigation">
+          <div className="space-y-1">
+            <button type="button" onClick={() => setActiveTab('monitor')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'monitor' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
+              <PencilLine className="h-4 w-4" />
+              <span>New task</span>
+            </button>
+            <button type="button" onClick={() => setActiveTab('prediction')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'prediction' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
+              <Bot className="h-4 w-4" />
+              <span>Agent</span>
+            </button>
+            <button type="button" onClick={() => setActiveTab('statistics')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'statistics' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
+              <Network className="h-4 w-4" />
+              <span>Plugins</span>
+            </button>
+            <button type="button" onClick={() => setActiveTab('reroute')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'reroute' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
+              <Clock className="h-4 w-4" />
+              <span>Scheduled</span>
+            </button>
+            <button type="button" onClick={() => setActiveTab('monitor')} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${activeTab === 'monitor' ? 'bg-white/[0.1] text-white' : 'text-slate-300 hover:bg-white/[0.05] hover:text-white'}`}>
+              <BookOpen className="h-4 w-4" />
+              <span>Library</span>
+            </button>
+          </div>
+
+          <div className="mt-9 flex items-center justify-between px-3 text-xs font-medium text-slate-500">
+            <span>Projects</span>
+            <Plus className="h-4 w-4" />
+          </div>
+          <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(false); }} className="mt-3 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.05] hover:text-white">
+            <FolderPlus className="h-4 w-4" />
+            <span>AIFE live dashboard</span>
+          </button>
+          <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(true); }} className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.05] hover:text-white">
+            <FolderPlus className="h-4 w-4" />
+            <span>New topology</span>
+          </button>
+
+          <div className="mt-9 flex items-center justify-between px-3 text-xs font-medium text-slate-500">
+            <span>Tasks</span>
+            <SlidersHorizontal className="h-4 w-4" />
+          </div>
+          <button type="button" onClick={() => setActiveTab('monitor')} className="mt-3 flex w-full items-center gap-3 rounded-lg bg-white/[0.1] px-3 py-3 text-left text-sm text-white shadow-sm transition hover:bg-white/[0.14]">
+            <ListChecks className="h-4 w-4 text-emerald-300" />
+            <span className="min-w-0 truncate">Integrate live data and packet movement</span>
+          </button>
+        </nav>
+
+        <div className="border-t border-white/[0.06] px-4 py-4">
+          <div className="flex items-center gap-2 text-xs text-emerald-300">
+            <CircleDot className="h-3.5 w-3.5" />
+            <span className="font-mono uppercase tracking-[0.18em]">Live telemetry</span>
+          </div>
+        </div>
+      </aside>
+
       {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm lg:ml-72">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -84,7 +165,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-none px-4 py-6 space-y-8 sm:px-6 lg:ml-72 lg:px-8 lg:py-8">
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-slate-900/50 border-slate-800">
@@ -139,7 +220,7 @@ export default function Home() {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="flex flex-col items-stretch gap-6 md:flex-row md:items-start">
-            <TabsList className="flex w-full flex-row gap-1 overflow-x-auto bg-slate-900/50 border border-slate-800 p-1 md:sticky md:top-24 md:h-fit md:w-48 md:shrink-0 md:flex-col md:items-stretch md:gap-2 md:p-2">
+            <TabsList className="flex w-full flex-row gap-1 overflow-x-auto bg-slate-900/50 border border-slate-800 p-1 lg:hidden">
             <TabsTrigger value="monitor" className="justify-start text-left data-[state=active]:bg-slate-800">
               Monitor
             </TabsTrigger>
@@ -333,7 +414,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 bg-slate-900/50 mt-12">
+      <footer className="mt-12 border-t border-slate-800 bg-slate-900/50 lg:ml-72">
         <div className="max-w-7xl mx-auto px-6 py-6 text-center text-sm text-slate-500">
           Made with Manus
         </div>

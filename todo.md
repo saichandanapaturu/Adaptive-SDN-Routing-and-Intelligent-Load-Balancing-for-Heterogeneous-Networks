@@ -10743,3 +10743,22 @@ The four existing sections now render as a vertical left-side rail on desktop: M
 - [x] Preserve active state and tab contents.
 - [x] Preserve responsive usability on mobile.
 - [x] Run typecheck/build and verify preview.
+
+## Reference-inspired sidebar redesign
+
+- [ ] Inspect the current dashboard shell and tab navigation.
+- [ ] Add a dark left sidebar with AIFE identity, utility controls, grouped navigation, Projects, and Tasks sections.
+- [ ] Move the existing Monitor, Statistics, Prediction, and Reroute Log controls into the sidebar.
+- [ ] Preserve active states and existing live dashboard content.
+- [ ] Keep the shell responsive on mobile widths.
+- [ ] Run typecheck/build and verify desktop/mobile previews.
+- [ ] Publish the sidebar redesign.
+
+## Reference-inspired sidebar verification
+
+The dashboard now presents a dark fixed sidebar at desktop widths with the AIFE identity, search/layout utilities, grouped top navigation, Projects actions, Tasks selection, and live telemetry footer. The main dashboard remains aligned beside it, while the existing mobile horizontal navigation remains available below the metric cards. Desktop and mobile previews both render correctly, the live topology and packet flow remain visible, and typecheck/build passed.
+
+- [x] Add reference-inspired dark sidebar.
+- [x] Preserve navigation to existing dashboard sections.
+- [x] Preserve topology, live metrics, and packet movement.
+- [x] Verify desktop and mobile responsive behavior.
