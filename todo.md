@@ -10584,3 +10584,23 @@ Browser verification passed. A saved Core-Switch and Edge-Router topology render
 - [x] Update port statistics, predictions, reroute events, packet flows, and summary metrics from active custom telemetry.
 - [x] Verify custom labels, custom link, changing values, recent prediction history, reroute entries, and packet route flow.
 - [x] Complete build verification.
+
+## Topology visibility refinement
+
+- [ ] Inspect the topology renderer’s current canvas, node, link, label, and packet styles.
+- [ ] Increase topology contrast and crispness without changing live telemetry behavior.
+- [ ] Improve node hierarchy, label legibility, link routing, traffic badges, and source/destination emphasis.
+- [ ] Add a professional NOC visual treatment with clearer grid, spacing, status colors, and reduced blur.
+- [ ] Verify the topology at desktop and mobile widths.
+- [ ] Confirm packet animation remains visible and route selectors still work.
+- [ ] Save a new checkpoint and publish the refined version.
+
+## Topology refinement verification result
+
+The topology renderer now uses a responsive high-DPI canvas, crisp grid registration, a dark instrument panel, stronger link contrast, status-based line styles, traffic badges, geometric node glyphs, boxed mono labels, clear SRC/DST markers, and precise cyan packet cores. Typecheck and production build passed. Desktop preview shows the revised topology clearly, and the mobile preview remains readable without changing the live data panels. The live server restarted successfully after the change.
+
+- [x] Inspect renderer and identify blur sources.
+- [x] Replace diffuse topology styling with crisp professional NOC treatment.
+- [x] Preserve live custom nodes, links, packet flows, selectors, and interactions.
+- [x] Verify desktop and mobile previews.
+- [x] Verify build and server restart.

@@ -1,3 +1,4 @@
+/* Style: AIFE topology renderer — high-contrast NOC canvas, crisp instrument lines, mono labels, emerald active state, cyan packet flow. */
 import React, { useEffect, useRef } from 'react';
 import { NetworkNode, NetworkLink, PacketFlow } from '@/hooks/useLiveNetworkData';
 
@@ -10,6 +11,118 @@ interface ImprovedNetworkTopologyProps {
   onNodeSelect?: (nodeId: string) => void;
   isInteractive?: boolean;
   onCanvasClick?: (x: number, y: number) => void;
+}
+
+type Point = { x: number; y: number };
+
+const COLORS = {
+  canvas: '#070d14',
+  panel: '#0b131c',
+  grid: 'rgba(71, 91, 111, 0.24)',
+  gridMajor: 'rgba(100, 116, 139, 0.32)',
+  ink: '#f8fafc',
+  muted: '#94a3b8',
+  emerald: '#10b981',
+  cyan: '#22d3ee',
+  amber: '#f59e0b',
+  red: '#ef4444',
+  slate: '#1e293b',
+};
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+function getCanvasSize(canvas: HTMLCanvasElement) {
+  const width = Math.max(canvas.clientWidth || 900, 320);
+  const height = Math.max(360, Math.round(width * 0.56));
+  return { width, height };
+}
+
+function buildLayout(nodes: NetworkNode[], width: number, height: number) {
+  const padding = { x: 72, y: 72 };
+  const minX = Math.min(...nodes.map(node => node.x), 0);
+  const maxX = Math.max(...nodes.map(node => node.x), 1);
+  const minY = Math.min(...nodes.map(node => node.y), 0);
+  const maxY = Math.max(...nodes.map(node => node.y), 1);
+  const rangeX = Math.max(maxX - minX, 0.001);
+  const rangeY = Math.max(maxY - minY, 0.001);
+  const usableWidth = Math.max(width - padding.x * 2, 1);
+  const usableHeight = Math.max(height - padding.y * 2, 1);
+
+  return new Map(
+    nodes.map((node, index) => {
+      const fallback = nodes.length <= 1 ? 0.5 : index / (nodes.length - 1);
+      const normalizedX = rangeX > 0.001 ? (node.x - minX) / rangeX : fallback;
+      const normalizedY = rangeY > 0.001 ? (node.y - minY) / rangeY : 0.5;
+      return [node.id, {
+        x: padding.x + clamp(normalizedX, 0, 1) * usableWidth,
+        y: padding.y + clamp(normalizedY, 0, 1) * usableHeight,
+      } satisfies Point];
+    }),
+  );
+}
+
+function statusColor(status: NetworkNode['status'] | NetworkLink['status']) {
+  if (status === 'critical') return COLORS.red;
+  if (status === 'warning') return COLORS.amber;
+  return COLORS.emerald;
+}
+
+function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, radius);
+}
+
+function drawPill(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, options?: { align?: CanvasTextAlign; fontSize?: number }) {
+  const fontSize = options?.fontSize ?? 11;
+  const align = options?.align ?? 'center';
+  ctx.save();
+  ctx.font = `700 ${fontSize}px "Space Mono", monospace`;
+  const textWidth = ctx.measureText(text).width;
+  const width = textWidth + 18;
+  const height = fontSize + 10;
+  let left = x - width / 2;
+  if (align === 'left') left = x;
+  if (align === 'right') left = x - width;
+  const top = y - height / 2;
+  ctx.fillStyle = 'rgba(7, 13, 20, 0.94)';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  drawRoundedRect(ctx, left, top, width, height, 5);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, align === 'left' ? left + 9 : align === 'right' ? left + width - 9 : x, y + 0.5);
+  ctx.restore();
+}
+
+function drawNodeGlyph(ctx: CanvasRenderingContext2D, type: NetworkNode['type'], x: number, y: number, color: string) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (type === 'switch') {
+    ctx.moveTo(x - 8, y - 5);
+    ctx.lineTo(x, y - 9);
+    ctx.lineTo(x + 8, y - 5);
+    ctx.lineTo(x + 8, y + 5);
+    ctx.lineTo(x, y + 9);
+    ctx.lineTo(x - 8, y + 5);
+    ctx.closePath();
+  } else if (type === 'router') {
+    ctx.moveTo(x, y - 9);
+    ctx.lineTo(x + 9, y);
+    ctx.lineTo(x, y + 9);
+    ctx.lineTo(x - 9, y);
+    ctx.closePath();
+  } else {
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = ({
@@ -28,271 +141,224 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-
-    // Clear canvas with dark background
-    ctx.fillStyle = '#0f1419';
-    ctx.fillRect(0, 0, width, height);
-
-    // Draw grid background for clarity
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 1;
-    const gridSize = 40;
-    for (let x = 0; x < width; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-    for (let y = 0; y < height; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
-
-    if (nodes.length === 0) {
-      ctx.fillStyle = '#64748b';
-      ctx.font = '16px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('No nodes in topology', width / 2, height / 2);
-      return;
-    }
-
-    // Calculate scaling
-    const padding = 80;
-    const maxX = Math.max(...nodes.map(n => n.x), 1);
-    const maxY = Math.max(...nodes.map(n => n.y), 1);
-    const scaleX = (width - padding * 2) / maxX;
-    const scaleY = (height - padding * 2) / maxY;
-
-    const getScreenPos = (node: NetworkNode) => ({
-      x: node.x * scaleX + padding,
-      y: node.y * scaleY + padding,
-    });
-
-    // Draw links first (so they appear behind nodes)
-    links.forEach(link => {
-      const source = nodes.find(n => n.id === link.source);
-      const target = nodes.find(n => n.id === link.target);
-      if (!source || !target) return;
-
-      const sourcePos = getScreenPos(source);
-      const targetPos = getScreenPos(target);
-
-      // Link color based on status
-      let linkColor = '#10b981'; // healthy - green
-      let lineWidth = 2;
-      
-      if (link.status === 'warning') {
-        linkColor = '#f59e0b'; // amber
-        lineWidth = 3;
-      }
-      if (link.status === 'critical') {
-        linkColor = '#ef4444'; // red
-        lineWidth = 4;
+    const render = () => {
+      const { width, height } = getCanvasSize(canvas);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.style.height = `${height}px`;
+      const backingWidth = Math.round(width * dpr);
+      const backingHeight = Math.round(height * dpr);
+      if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
+        canvas.width = backingWidth;
+        canvas.height = backingHeight;
       }
 
-      // Draw link shadow for depth
-      ctx.strokeStyle = '#00000040';
-      ctx.lineWidth = lineWidth + 4;
-      ctx.beginPath();
-      ctx.moveTo(sourcePos.x, sourcePos.y);
-      ctx.lineTo(targetPos.x, targetPos.y);
-      ctx.stroke();
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.imageSmoothingEnabled = true;
 
-      // Draw link with gradient based on traffic
-      const gradient = ctx.createLinearGradient(sourcePos.x, sourcePos.y, targetPos.x, targetPos.y);
-      const alpha = 0.4 + (link.trafficLevel / 100) * 0.6;
-      gradient.addColorStop(0, `${linkColor}${Math.floor(alpha * 255).toString(16).padStart(2, '0')}`);
-      gradient.addColorStop(1, `${linkColor}${Math.floor(alpha * 255).toString(16).padStart(2, '0')}`);
+      const background = ctx.createLinearGradient(0, 0, 0, height);
+      background.addColorStop(0, COLORS.panel);
+      background.addColorStop(1, COLORS.canvas);
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, width, height);
 
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = lineWidth;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(sourcePos.x, sourcePos.y);
-      ctx.lineTo(targetPos.x, targetPos.y);
-      ctx.stroke();
-
-      // Draw traffic indicator badge
-      const midX = (sourcePos.x + targetPos.x) / 2;
-      const midY = (sourcePos.y + targetPos.y) / 2;
-      
-      // Badge background
-      ctx.fillStyle = '#0f1419';
-      ctx.strokeStyle = linkColor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(midX - 22, midY - 12, 44, 24, 4);
-      ctx.fill();
-      ctx.stroke();
-
-      // Badge text
-      ctx.fillStyle = linkColor;
-      ctx.font = 'bold 11px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`${link.trafficLevel.toFixed(0)}%`, midX, midY);
-    });
-
-    // Draw nodes
-    nodes.forEach(node => {
-      const pos = getScreenPos(node);
-      const isSelected = node.id === selectedSource || node.id === selectedDestination;
-      const baseRadius = 18;
-      const radius = isSelected ? 24 : baseRadius;
-
-      // Node color based on status
-      let nodeColor = '#10b981'; // healthy
-      if (node.status === 'warning') nodeColor = '#f59e0b';
-      if (node.status === 'critical') nodeColor = '#ef4444';
-
-      // Draw node shadow
-      ctx.fillStyle = '#00000060';
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius + 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw outer glow ring
-      ctx.strokeStyle = `${nodeColor}30`;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius + 12, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Draw node circle
-      ctx.fillStyle = nodeColor;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw selection highlight
-      if (isSelected) {
-        ctx.strokeStyle = '#06b6d4';
-        ctx.lineWidth = 3;
+      // Crisp grid with major registration lines, not a diffuse blur.
+      const gridSize = Math.max(32, Math.round(width / 28));
+      for (let x = 0; x <= width; x += gridSize) {
+        ctx.strokeStyle = x % (gridSize * 4) === 0 ? COLORS.gridMajor : COLORS.grid;
+        ctx.lineWidth = x % (gridSize * 4) === 0 ? 1 : 0.65;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2);
+        ctx.moveTo(Math.round(x) + 0.5, 0);
+        ctx.lineTo(Math.round(x) + 0.5, height);
         ctx.stroke();
+      }
+      for (let y = 0; y <= height; y += gridSize) {
+        ctx.strokeStyle = y % (gridSize * 4) === 0 ? COLORS.gridMajor : COLORS.grid;
+        ctx.lineWidth = y % (gridSize * 4) === 0 ? 1 : 0.65;
+        ctx.beginPath();
+        ctx.moveTo(0, Math.round(y) + 0.5);
+        ctx.lineTo(width, Math.round(y) + 0.5);
+        ctx.stroke();
+      }
 
-        // Draw selection label
-        const label = node.id === selectedSource ? 'SRC' : 'DST';
-        ctx.fillStyle = '#06b6d4';
-        ctx.font = 'bold 10px monospace';
+      // Fine viewport frame and corner registration marks.
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.36)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(18.5, 18.5, width - 37, height - 37);
+      ctx.fillStyle = COLORS.muted;
+      ctx.font = '700 10px "Space Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('TOPOLOGY // LIVE TELEMETRY', 32, 30);
+      ctx.textAlign = 'right';
+      ctx.fillText(`${nodes.length.toString().padStart(2, '0')} NODES · ${links.length.toString().padStart(2, '0')} LINKS`, width - 32, 30);
+
+      if (nodes.length === 0) {
+        ctx.fillStyle = COLORS.muted;
+        ctx.font = '700 14px "Space Mono", monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(label, pos.x, pos.y - radius - 18);
+        ctx.fillText('NO NODES IN ACTIVE TOPOLOGY', width / 2, height / 2);
+        return;
       }
 
-      // Draw node label
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(node.label, pos.x, pos.y + radius + 28);
+      const positions = buildLayout(nodes, width, height);
+      const nodeById = new Map(nodes.map(node => [node.id, node]));
+      const routeEdges = new Set<string>();
+      packetFlows.forEach(flow => {
+        flow.path.forEach((nodeId, index) => {
+          if (index < flow.path.length - 1) {
+            routeEdges.add(`${nodeId}::${flow.path[index + 1]}`);
+            routeEdges.add(`${flow.path[index + 1]}::${nodeId}`);
+          }
+        });
+      });
 
-      // Draw node type indicator (small icon)
-      ctx.fillStyle = nodeColor;
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const typeSymbol = node.type === 'switch' ? '⬢' : node.type === 'host' ? '●' : '◆';
-      ctx.fillText(typeSymbol, pos.x, pos.y);
-    });
+      // Links are drawn first so nodes and packet cores stay sharp above them.
+      links.forEach(link => {
+        const sourcePos = positions.get(link.source);
+        const targetPos = positions.get(link.target);
+        if (!sourcePos || !targetPos) return;
+        const color = statusColor(link.status);
+        const routeEdge = routeEdges.has(`${link.source}::${link.target}`);
+        const traffic = clamp(link.trafficLevel, 0, 100);
+        const lineWidth = routeEdge ? 4 : 1.5 + traffic * 0.025;
 
-    // Draw packet flows
-    packetFlows.forEach(flow => {
-      const path = flow.path;
-      if (path.length < 2) return;
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.setLineDash(link.status === 'critical' ? [8, 6] : link.status === 'warning' ? [4, 4] : []);
+        ctx.strokeStyle = 'rgba(2, 6, 23, 0.95)';
+        ctx.lineWidth = lineWidth + 5;
+        ctx.beginPath();
+        ctx.moveTo(sourcePos.x, sourcePos.y);
+        ctx.lineTo(targetPos.x, targetPos.y);
+        ctx.stroke();
+        ctx.strokeStyle = routeEdge ? COLORS.cyan : color;
+        ctx.globalAlpha = routeEdge ? 0.95 : 0.72 + traffic / 360;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(sourcePos.x, sourcePos.y);
+        ctx.lineTo(targetPos.x, targetPos.y);
+        ctx.stroke();
+        ctx.restore();
 
-      // Calculate packet position along path
-      const pathProgress = flow.progress / 100;
-      const totalSegments = path.length - 1;
-      const currentSegment = Math.floor(pathProgress * totalSegments);
-      const segmentProgress = (pathProgress * totalSegments) - currentSegment;
+        const midX = (sourcePos.x + targetPos.x) / 2;
+        const midY = (sourcePos.y + targetPos.y) / 2;
+        drawPill(ctx, `${traffic.toFixed(0)}%`, midX, midY, routeEdge ? COLORS.cyan : color, { fontSize: 10 });
+      });
 
-      if (currentSegment >= path.length - 1) return;
+      // Nodes use hard-edged instrument rings and a geometric glyph for clarity.
+      nodes.forEach(node => {
+        const pos = positions.get(node.id);
+        if (!pos) return;
+        const color = statusColor(node.status);
+        const selected = node.id === selectedSource || node.id === selectedDestination;
+        const radius = selected ? 24 : 20;
+        const label = node.label.length > 22 ? `${node.label.slice(0, 20)}…` : node.label;
 
-      const sourceNode = nodes.find(n => n.id === path[currentSegment]);
-      const targetNode = nodes.find(n => n.id === path[currentSegment + 1]);
+        ctx.save();
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.92)';
+        ctx.strokeStyle = selected ? COLORS.cyan : color;
+        ctx.lineWidth = selected ? 2.5 : 1.5;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius + 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 0.45;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius + 15, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(8, 18, 27, 0.98)';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = selected ? COLORS.cyan : color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        drawNodeGlyph(ctx, node.type, pos.x, pos.y, color);
+        ctx.restore();
 
-      if (!sourceNode || !targetNode) return;
+        const labelWidth = Math.max(78, Math.min(190, label.length * 7.5 + 24));
+        ctx.save();
+        ctx.fillStyle = 'rgba(7, 13, 20, 0.94)';
+        ctx.strokeStyle = selected ? 'rgba(34, 211, 238, 0.65)' : 'rgba(148, 163, 184, 0.32)';
+        ctx.lineWidth = 1;
+        drawRoundedRect(ctx, pos.x - labelWidth / 2, pos.y + radius + 14, labelWidth, 25, 5);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = COLORS.ink;
+        ctx.font = '700 11px "Space Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, pos.x, pos.y + radius + 26.5);
+        ctx.restore();
 
-      const sourcePos = getScreenPos(sourceNode);
-      const targetPos = getScreenPos(targetNode);
+        if (selected) {
+          drawPill(ctx, node.id === selectedSource ? 'SRC' : 'DST', pos.x, pos.y - radius - 26, COLORS.cyan, { fontSize: 10 });
+        }
+      });
 
-      const packetX = sourcePos.x + (targetPos.x - sourcePos.x) * segmentProgress;
-      const packetY = sourcePos.y + (targetPos.y - sourcePos.y) * segmentProgress;
+      // Packets remain bright and precise without a large shadow blur that makes the canvas look soft.
+      packetFlows.forEach(flow => {
+        if (flow.path.length < 2) return;
+        const progress = clamp(flow.progress / 100, 0, 0.9999);
+        const segmentIndex = Math.floor(progress * (flow.path.length - 1));
+        const segmentProgress = progress * (flow.path.length - 1) - segmentIndex;
+        const source = positions.get(flow.path[segmentIndex]);
+        const target = positions.get(flow.path[segmentIndex + 1]);
+        if (!source || !target) return;
+        const x = source.x + (target.x - source.x) * segmentProgress;
+        const y = source.y + (target.y - source.y) * segmentProgress;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 14, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#ecfeff';
+        ctx.strokeStyle = COLORS.cyan;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      });
+    };
 
-      // Draw packet with enhanced glow
-      ctx.fillStyle = '#06b6d4';
-      ctx.shadowColor = '#06b6d4';
-      ctx.shadowBlur = 20;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-      ctx.beginPath();
-      ctx.arc(packetX, packetY, 7, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.shadowBlur = 0;
-
-      // Draw packet trail rings
-      ctx.strokeStyle = '#06b6d480';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(packetX, packetY, 12, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.strokeStyle = '#06b6d440';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(packetX, packetY, 18, 0, Math.PI * 2);
-      ctx.stroke();
-    });
-  }, [nodes, links, packetFlows, selectedSource, selectedDestination]);
+    render();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(render) : null;
+    observer?.observe(canvas);
+    return () => observer?.disconnect();
+  }, [links, nodes, packetFlows, selectedDestination, selectedSource]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={900}
-      height={500}
-      className="w-full border border-border rounded-lg bg-slate-950 cursor-crosshair"
-      onClick={(e) => {
-        if (!canvasRef.current) return;
-
+      className="block w-full rounded-xl border border-emerald-500/35 bg-slate-950 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.08),0_18px_50px_rgba(2,6,23,0.28)] cursor-crosshair"
+      aria-label="Live network topology visualization"
+      onClick={(event) => {
         const canvas = canvasRef.current;
+        if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        const { width, height } = getCanvasSize(canvas);
+        const x = (event.clientX - rect.left) * (width / rect.width);
+        const y = (event.clientY - rect.top) * (height / rect.height);
 
         if (isInteractive && onCanvasClick) {
           onCanvasClick(x, y);
-        } else if (onNodeSelect) {
-          const width = canvas.width;
-          const height = canvas.height;
-          const padding = 80;
-          const maxX = Math.max(...nodes.map(n => n.x), 1);
-          const maxY = Math.max(...nodes.map(n => n.y), 1);
-          const scaleX = (width - padding * 2) / maxX;
-          const scaleY = (height - padding * 2) / maxY;
-
-          // Check if click is near any node
-          nodes.forEach(node => {
-            const nodeX = node.x * scaleX + padding;
-            const nodeY = node.y * scaleY + padding;
-            const distance = Math.sqrt((x - nodeX) ** 2 + (y - nodeY) ** 2);
-
-            if (distance < 24) {
-              onNodeSelect(node.id);
-            }
-          });
+          return;
         }
+        if (!onNodeSelect || nodes.length === 0) return;
+        const positions = buildLayout(nodes, width, height);
+        nodes.forEach(node => {
+          const position = positions.get(node.id);
+          if (!position) return;
+          const distance = Math.hypot(x - position.x, y - position.y);
+          if (distance <= 30) onNodeSelect(node.id);
+        });
       }}
     />
   );
