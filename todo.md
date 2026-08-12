@@ -10604,3 +10604,22 @@ The topology renderer now uses a responsive high-DPI canvas, crisp grid registra
 - [x] Preserve live custom nodes, links, packet flows, selectors, and interactions.
 - [x] Verify desktop and mobile previews.
 - [x] Verify build and server restart.
+
+## ResizeObserver warning fix
+
+- [ ] Trace the ResizeObserver and canvas style-sizing interaction.
+- [ ] Prevent observer callbacks from synchronously changing the observed element’s layout.
+- [ ] Preserve responsive high-DPI canvas rendering and packet animation.
+- [ ] Run typecheck and production build.
+- [ ] Verify the dashboard preview and browser console warning state.
+- [ ] Save and publish the fix.
+
+## ResizeObserver fix verification result
+
+The warning was traced to observing the canvas while synchronously changing its CSS height during the observer callback. The renderer now observes the stable parent, schedules redraws through requestAnimationFrame, updates the CSS height only when it changes, and also listens to window resize. Typecheck and production build passed. The latest console entries after the fixed restart contain no new ResizeObserver warning; the remaining matches are historical entries from before the fix. The responsive topology preview still renders correctly with live packet flow.
+
+- [x] Trace the observer feedback loop.
+- [x] Apply parent observation and frame-scheduled redraw.
+- [x] Run typecheck/build.
+- [x] Restart and verify the preview.
+- [x] Confirm no new warning after the fix.

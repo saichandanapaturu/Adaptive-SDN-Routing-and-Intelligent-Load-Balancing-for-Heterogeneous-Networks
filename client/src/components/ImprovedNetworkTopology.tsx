@@ -144,7 +144,10 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
     const render = () => {
       const { width, height } = getCanvasSize(canvas);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.style.height = `${height}px`;
+      const nextCssHeight = `${height}px`;
+      if (canvas.style.height !== nextCssHeight) {
+        canvas.style.height = nextCssHeight;
+      }
       const backingWidth = Math.round(width * dpr);
       const backingHeight = Math.round(height * dpr);
       if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
@@ -205,7 +208,6 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
       }
 
       const positions = buildLayout(nodes, width, height);
-      const nodeById = new Map(nodes.map(node => [node.id, node]));
       const routeEdges = new Set<string>();
       packetFlows.forEach(flow => {
         flow.path.forEach((nodeId, index) => {
@@ -328,10 +330,31 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
       });
     };
 
-    render();
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(render) : null;
-    observer?.observe(canvas);
-    return () => observer?.disconnect();
+    let animationFrame = 0;
+    const scheduleRender = () => {
+      if (animationFrame) return;
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = 0;
+        render();
+      });
+    };
+
+    // Observe the stable layout parent rather than the canvas itself. The previous
+    // implementation observed the canvas and synchronously changed its CSS height,
+    // which could make the browser report a ResizeObserver notification loop.
+    const observedElement = canvas.parentElement;
+    const observer = observedElement && typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(scheduleRender)
+      : null;
+    observer?.observe(observedElement ?? canvas);
+    window.addEventListener('resize', scheduleRender, { passive: true });
+    scheduleRender();
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', scheduleRender);
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    };
   }, [links, nodes, packetFlows, selectedDestination, selectedSource]);
 
   return (
