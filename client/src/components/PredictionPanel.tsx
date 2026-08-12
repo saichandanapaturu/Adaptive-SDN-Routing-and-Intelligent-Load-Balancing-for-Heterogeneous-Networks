@@ -105,6 +105,11 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
   const forecastMid = Math.max(0, Math.min(100, latest.predictedCongestion + forecastLift * 0.55));
   const forecastEnd = Math.max(0, Math.min(100, latest.predictedCongestion + forecastLift));
   const forecastPath = `M 80,${chartY(latest.predictedCongestion).toFixed(2)} Q 90,${chartY(forecastMid).toFixed(2)} 100,${chartY(forecastEnd).toFixed(2)}`;
+  const lastChartIndex = Math.max(chartPoints.length - 1, 0);
+  const observedLastX = chartX(lastChartIndex, chartPoints.length);
+  const observedLastY = chartY(observedValues[lastChartIndex] ?? 0);
+  const predictedLastY = chartY(latest.predictedCongestion);
+  const chartGrid = [20, 37.5, 55, 72.5, 90];
 
   return (
     <div className="space-y-6 text-slate-100 font-mono">
@@ -231,64 +236,98 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               </div>
             </div>
 
-            {/* SVG Chart area */}
-            <div className="relative h-64 w-full bg-slate-950/60 border border-slate-800 rounded-lg p-3 flex flex-col justify-end">
-              {/* Forecast window highlight background */}
-              <div className="absolute right-3 top-3 bottom-3 w-16 bg-amber-500/10 border-l border-dashed border-amber-500/40 rounded-r flex flex-col items-center justify-start pt-2">
-                <span className="text-[10px] text-amber-400 font-bold tracking-widest uppercase writing-mode-vertical">FORECAST</span>
+            {/* Crisp chart surface with explicit scale and live markers */}
+            <div className="relative h-72 md:h-80 w-full overflow-hidden rounded-lg border border-slate-700/90 bg-[#07101c] shadow-[inset_0_1px_0_rgba(148,163,184,0.08)]">
+              <div className="absolute inset-y-3 right-3 w-[19%] rounded-r border-l border-dashed border-amber-400/70 bg-amber-400/[0.07]" aria-hidden="true" />
+              <div className="absolute right-4 top-4 z-10 rounded border border-amber-400/50 bg-slate-950/90 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-amber-300 shadow-lg">
+                Forecast +1.0s
               </div>
 
-              {/* SVG curve */}
-              <div className="absolute inset-0 p-4 flex items-center">
-                <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
+              <div className="absolute left-2 top-5 bottom-14 z-10 flex flex-col justify-between text-[9px] font-mono text-slate-500" aria-hidden="true">
+                <span>100</span>
+                <span>75</span>
+                <span>50</span>
+                <span>25</span>
+                <span>0</span>
+              </div>
+
+              <div className="absolute inset-x-10 top-4 bottom-12">
+                <svg
+                  className="h-full w-full overflow-visible"
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  shapeRendering="geometricPrecision"
+                  role="img"
+                  aria-label="Observed and predicted congestion over the last 60 seconds with a one second forecast"
+                >
                   <defs>
                     <linearGradient id="observedGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="#22d3ee" stopOpacity="0.0" />
+                      <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.22" />
+                      <stop offset="100%" stopColor="#22d3ee" stopOpacity="0.015" />
                     </linearGradient>
                   </defs>
-                  {/* Observed area */}
-                  <path
-                    d={observedFillPath}
-                    fill="url(#observedGrad)"
-                  />
-                  {/* Observed solid line */}
+
+                  {chartGrid.map((y) => (
+                    <line
+                      key={y}
+                      x1="8"
+                      x2="100"
+                      y1={y}
+                      y2={y}
+                      stroke="#334155"
+                      strokeWidth="0.45"
+                      strokeDasharray={y === 90 ? undefined : '1.5 2.5'}
+                      vectorEffect="non-scaling-stroke"
+                      opacity={y === 90 ? 0.85 : 0.62}
+                    />
+                  ))}
+                  <line x1="8" x2="8" y1="20" y2="90" stroke="#475569" strokeWidth="0.7" vectorEffect="non-scaling-stroke" />
+                  <line x1="8" x2="100" y1="90" y2="90" stroke="#475569" strokeWidth="0.7" vectorEffect="non-scaling-stroke" />
+
+                  <path d={observedFillPath} fill="url(#observedGrad)" />
                   <path
                     d={observedPath}
                     fill="none"
-                    stroke="#22d3ee"
-                    strokeWidth="2.5"
+                    stroke="#67e8f9"
+                    strokeWidth="2.4"
                     strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
                   />
-                  {/* Predicted dashed line */}
                   <path
                     d={predictedHistoryPath}
                     fill="none"
                     stroke="#fbbf24"
-                    strokeWidth="2.5"
-                    strokeDasharray="3,3"
+                    strokeWidth="2.1"
+                    strokeDasharray="5 4"
                     strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
                   />
-                  {/* Predicted forecast segment */}
                   <path
                     d={forecastPath}
                     fill="none"
-                    stroke="#fbbf24"
-                    strokeWidth="2.5"
-                    strokeDasharray="3,3"
+                    stroke="#fde68a"
+                    strokeWidth="2.3"
+                    strokeDasharray="5 4"
                     strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
                   />
+
+                  <circle cx={observedLastX} cy={observedLastY} r="3.2" fill="#67e8f9" stroke="#082f49" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                  <circle cx={observedLastX} cy={predictedLastY} r="3" fill="#fbbf24" stroke="#451a03" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                  <line x1={observedLastX} x2={observedLastX} y1={observedLastY} y2={predictedLastY} stroke="#e2e8f0" strokeWidth="0.8" strokeDasharray="1.5 1.5" vectorEffect="non-scaling-stroke" opacity="0.65" />
                 </svg>
               </div>
 
-              {/* X Axis Labels */}
-              <div className="flex justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-800/80 z-10">
+              <div className="absolute inset-x-10 bottom-3 z-10 flex justify-between border-t border-slate-700/80 pt-2 text-[10px] font-mono text-slate-500">
                 <span>-60s</span>
                 <span>-45s</span>
                 <span>-30s</span>
                 <span>-15s</span>
-                <span className="text-cyan-400 font-bold">NOW</span>
-                <span className="text-amber-400 font-bold">+1.0s (FORECAST)</span>
+                <span className="font-bold text-cyan-300">NOW</span>
+                <span className="font-bold text-amber-300">+1s</span>
               </div>
             </div>
           </div>

@@ -10705,3 +10705,23 @@ The graph was static because the SVG paths were hardcoded even though rolling pr
 - [x] Keep the forecast trajectory trend-aware.
 - [x] Verify after a 30-second window.
 - [x] Confirm no console errors.
+
+## Congestion Predictor graph clarity refinement
+
+- [ ] Inspect the current SVG chart presentation and identify blur sources.
+- [ ] Add crisp chart axes, horizontal gridlines, scale labels, and clear time labels.
+- [ ] Separate observed and predicted lines with strong contrast and distinct stroke styles.
+- [ ] Add readable current-value markers and a clearly bounded forecast window.
+- [ ] Preserve the live rolling data and avoid changing other panel sections.
+- [ ] Verify the chart at desktop and mobile sizes, then run typecheck/build.
+- [ ] Publish the graph-only visual refinement.
+
+## Congestion Predictor graph clarity verification
+
+The graph now uses a dedicated dark chart surface, explicit 0–100 scale labels, crisp dotted gridlines, visible axes, non-scaling strokes, clearer cyan observed and amber predicted paths, an outlined forecast window, readable forecast badge, current-value markers, and a gap indicator between observed and predicted values. The live chart geometry remains derived from rolling telemetry. Typecheck and production build passed; the refreshed dashboard preview and console check remained stable.
+
+- [x] Add chart scale and grid system.
+- [x] Strengthen line contrast and forecast separation.
+- [x] Add current-value markers and accessible chart labeling.
+- [x] Verify responsive dashboard preview.
+- [x] Confirm no new console errors.
