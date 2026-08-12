@@ -84,3 +84,7 @@
 - Port statistics table should be scrollable with sticky headers
 - Re-routing log should show real-time events with timestamps
 - Prediction panel should display trend lines and forecasts
+
+## Style Decisions
+
+The AIFE header always pairs the wordmark with a geometric three-node triangle mark in emerald `#10b981`. Interface iconography uses technical geometric line symbols and data glyphs rather than emoji-style decoration. The topology visualization is the source of truth for the full UI: dark charcoal surfaces, thin instrument borders, mono data labels, emerald active signals, cyan packet motion, and deliberate amber/red operational states extend across cards, tabs, controls, and status elements.

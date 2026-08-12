@@ -1,9 +1,9 @@
 import { useState } from 'react';
+import { useTopologyContext } from '@/contexts/TopologyContext';
 import { NetworkNode, NetworkLink } from './useLiveNetworkData';
 
 export function useCustomTopology() {
-  const [nodes, setNodes] = useState<NetworkNode[]>([]);
-  const [links, setLinks] = useState<NetworkLink[]>([]);
+  const context = useTopologyContext();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const addNode = (label: string, x: number, y: number, type: 'switch' | 'host' | 'router' = 'switch') => {
@@ -16,25 +16,25 @@ export function useCustomTopology() {
       y,
       trafficLevel: 0,
     };
-    setNodes([...nodes, newNode]);
+    context.addCustomNode(newNode);
     return newNode.id;
   };
 
   const deleteNode = (nodeId: string) => {
-    setNodes(nodes.filter(n => n.id !== nodeId));
-    setLinks(links.filter(l => l.source !== nodeId && l.target !== nodeId));
+    context.deleteCustomNode(nodeId);
     if (selectedNodeId === nodeId) {
       setSelectedNodeId(null);
     }
   };
 
   const updateNode = (nodeId: string, updates: Partial<NetworkNode>) => {
-    setNodes(nodes.map(n => (n.id === nodeId ? { ...n, ...updates } : n)));
+    const updated = context.customNodes.map(n => (n.id === nodeId ? { ...n, ...updates } : n));
+    context.setCustomNodes(updated);
   };
 
   const addLink = (sourceId: string, targetId: string, bandwidth: number = 1) => {
     // Prevent duplicate links
-    const linkExists = links.some(
+    const linkExists = context.customLinks.some(
       l => (l.source === sourceId && l.target === targetId) || 
            (l.source === targetId && l.target === sourceId)
     );
@@ -48,36 +48,35 @@ export function useCustomTopology() {
       trafficLevel: 0,
       status: 'healthy',
     };
-    setLinks([...links, newLink]);
+    context.addCustomLink(newLink);
   };
 
   const deleteLink = (sourceId: string, targetId: string) => {
-    setLinks(links.filter(l => !(l.source === sourceId && l.target === targetId)));
+    context.deleteCustomLink(sourceId, targetId);
   };
 
   const clearTopology = () => {
-    setNodes([]);
-    setLinks([]);
+    context.clearCustomTopology();
     setSelectedNodeId(null);
   };
 
   const exportTopology = () => {
-    return JSON.stringify({ nodes, links }, null, 2);
+    return JSON.stringify({ nodes: context.customNodes, links: context.customLinks }, null, 2);
   };
 
   const importTopology = (jsonData: string) => {
     try {
       const { nodes: importedNodes, links: importedLinks } = JSON.parse(jsonData);
-      setNodes(importedNodes);
-      setLinks(importedLinks);
+      context.setCustomNodes(importedNodes);
+      context.setCustomLinks(importedLinks);
     } catch (error) {
       console.error('Failed to import topology:', error);
     }
   };
 
   return {
-    nodes,
-    links,
+    nodes: context.customNodes,
+    links: context.customLinks,
     selectedNodeId,
     setSelectedNodeId,
     addNode,
@@ -90,3 +89,5 @@ export function useCustomTopology() {
     importTopology,
   };
 }
+
+

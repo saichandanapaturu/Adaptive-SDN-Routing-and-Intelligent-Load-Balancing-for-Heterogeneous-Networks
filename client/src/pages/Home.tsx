@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useLiveNetworkData } from '@/hooks/useLiveNetworkData';
+import { useLiveNetworkDataWithCustom } from '@/hooks/useLiveNetworkDataWithCustom';
+import { useTopologyContext } from '@/contexts/TopologyContext';
 import { ImprovedNetworkTopology } from '@/components/ImprovedNetworkTopology';
 import { CustomTopologyBuilder } from '@/components/CustomTopologyBuilder';
 import { PortStatistics } from '@/components/PortStatistics';
@@ -9,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Activity, AlertTriangle, Zap, Clock } from 'lucide-react';
+import { Activity, AlertTriangle, Zap, Clock, Network, GitBranch } from 'lucide-react';
 
 export default function Home() {
   const {
@@ -23,11 +24,14 @@ export default function Home() {
     selectedDestination,
     updateRoute,
     getNetworkStats,
-  } = useLiveNetworkData();
+    hasCustomTopology,
+    telemetryTick,
+  } = useLiveNetworkDataWithCustom();
+
+  const { isUsingCustom, setIsUsingCustom } = useTopologyContext();
 
   const stats = getNetworkStats();
   const [activeTab, setActiveTab] = useState('monitor');
-  const [topologyMode, setTopologyMode] = useState<'dashboard' | 'custom'>('dashboard');
 
   const handleSourceChange = (nodeId: string) => {
     updateRoute(nodeId, selectedDestination);
@@ -51,17 +55,30 @@ export default function Home() {
       <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-white tracking-tight">
-                AIFE Dashboard
-              </h1>
-              <p className="text-sm text-slate-400 mt-1">
-                AI Intelligent Flow Engine - Network Monitoring
-              </p>
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.18)]" aria-label="AIFE network mark">
+                <svg viewBox="0 0 48 48" className="h-8 w-8" role="img" aria-hidden="true">
+                  <path d="M24 8 10 34h28L24 8Z" fill="none" stroke="currentColor" strokeWidth="2.2" />
+                  <circle cx="24" cy="8" r="3.2" fill="currentColor" />
+                  <circle cx="10" cy="34" r="3.2" fill="currentColor" />
+                  <circle cx="38" cy="34" r="3.2" fill="currentColor" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="font-mono text-2xl font-bold tracking-tight text-white">
+                  AIFE <span className="text-emerald-400">/</span> Dashboard
+                </h1>
+                <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                  AI Intelligent Flow Engine · Network Monitoring
+                </p>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-emerald-500">●</div>
-              <p className="text-xs text-slate-400">Live</p>
+            <div className="flex items-center gap-2 text-right">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]" aria-hidden="true" />
+              <div>
+                <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Live</p>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Telemetry</p>
+              </div>
             </div>
           </div>
         </div>
@@ -75,7 +92,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-400 mb-1">Total Nodes</p>
-                  <p className="text-3xl font-bold text-slate-100">{stats.totalNodes}</p>
+                  <p className="font-mono text-3xl font-bold text-slate-100">{stats.totalNodes}</p>
                 </div>
                 <Activity className="w-8 h-8 text-emerald-500 opacity-50" />
               </div>
@@ -87,7 +104,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-400 mb-1">Active Links</p>
-                  <p className="text-3xl font-bold text-slate-100">{stats.activeLinks}</p>
+                  <p className="font-mono text-3xl font-bold text-slate-100">{stats.activeLinks}</p>
                 </div>
                 <Zap className="w-8 h-8 text-emerald-500 opacity-50" />
               </div>
@@ -99,7 +116,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-400 mb-1">Congested Links</p>
-                  <p className="text-3xl font-bold text-amber-500">{stats.congestedLinks}</p>
+                  <p className="font-mono text-3xl font-bold text-amber-500">{stats.congestedLinks}</p>
                 </div>
                 <AlertTriangle className="w-8 h-8 text-amber-500 opacity-50" />
               </div>
@@ -111,7 +128,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-400 mb-1">Failed Links</p>
-                  <p className="text-3xl font-bold text-red-500">{stats.failedLinks}</p>
+                  <p className="font-mono text-3xl font-bold text-red-500">{stats.failedLinks}</p>
                 </div>
                 <Clock className="w-8 h-8 text-red-500 opacity-50" />
               </div>
@@ -141,33 +158,46 @@ export default function Home() {
             {/* Topology Mode Toggle */}
             <div className="flex gap-3">
               <Button
-                onClick={() => setTopologyMode('dashboard')}
+                onClick={() => setIsUsingCustom(false)}
                 className={`flex-1 font-semibold ${
-                  topologyMode === 'dashboard'
+                  !isUsingCustom
                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                 }`}
               >
-                📊 Dashboard Topology
+                <Network className="mr-2 h-4 w-4" /> Dashboard Topology
               </Button>
               <Button
-                onClick={() => setTopologyMode('custom')}
+                onClick={() => setIsUsingCustom(true)}
                 className={`flex-1 font-semibold ${
-                  topologyMode === 'custom'
+                  isUsingCustom
                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                 }`}
               >
-                🔧 Custom Topology
+                <GitBranch className="mr-2 h-4 w-4" /> Custom Topology
               </Button>
             </div>
 
-            {/* Dashboard Topology Mode */}
-            {topologyMode === 'dashboard' ? (
+            {/* Dashboard/Custom Topology Mode */}
+            {!isUsingCustom ? (
               <Card className="bg-slate-900/50 border-slate-800">
                 <CardHeader>
-                  <CardTitle className="text-lg font-bold">Network Topology</CardTitle>
-                  <CardDescription>Real-time network visualization with packet flow</CardDescription>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-lg font-bold">
+                        {hasCustomTopology ? 'Live Custom Network Topology' : 'Network Topology'}
+                      </CardTitle>
+                      <CardDescription>
+                        {hasCustomTopology
+                          ? 'Dashboard telemetry is driven by your saved custom nodes and links.'
+                          : 'Real-time network visualization with packet flow'}
+                      </CardDescription>
+                    </div>
+                    <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                      {hasCustomTopology ? `CUSTOM LIVE · TICK ${telemetryTick}` : 'DEFAULT LIVE'}
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Source/Destination Selector */}
@@ -236,13 +266,18 @@ export default function Home() {
                 </CardContent>
               </Card>
             ) : (
-              <CustomTopologyBuilder />
+              <div className="space-y-4">
+                <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-sm text-cyan-100">
+                  Build or edit your network here, then choose <span className="font-semibold">Dashboard Topology</span> to see the same nodes and links animated with live telemetry.
+                </div>
+                <CustomTopologyBuilder />
+              </div>
             )}
 
             {/* Traffic Heatmap */}
             <Card className="bg-slate-900/50 border-slate-800">
               <CardHeader>
-                <CardTitle className="text-lg font-bold">Network Stats</CardTitle>
+                      <CardTitle className="font-mono text-lg font-bold uppercase tracking-wide">Network Stats</CardTitle>
                 <CardDescription>Overall network health metrics</CardDescription>
               </CardHeader>
               <CardContent>
@@ -250,25 +285,27 @@ export default function Home() {
                   <div className="p-4 rounded-lg bg-slate-800/50">
                     <p className="text-xs text-slate-400 mb-1">Max Traffic</p>
                     <p className="text-2xl font-bold text-slate-100">
-                      {stats.maxTraffic.toFixed(0)}%
+                                              <span className="font-mono">{stats.maxTraffic.toFixed(0)}%</span>
+
                     </p>
                   </div>
                   <div className="p-4 rounded-lg bg-slate-800/50">
                     <p className="text-xs text-slate-400 mb-1">Avg Traffic</p>
                     <p className="text-2xl font-bold text-slate-100">
-                      {stats.avgTraffic.toFixed(0)}%
+                                              <span className="font-mono">{stats.avgTraffic.toFixed(0)}%</span>
+
                     </p>
                   </div>
                   <div className="p-4 rounded-lg bg-slate-800/50">
                     <p className="text-xs text-slate-400 mb-1">Active Nodes</p>
                     <p className="text-2xl font-bold text-emerald-500">
-                      {stats.activeNodes}/{stats.totalNodes}
+                      <span className="font-mono">{stats.activeNodes}/{stats.totalNodes}</span>
                     </p>
                   </div>
                   <div className="p-4 rounded-lg bg-slate-800/50">
                     <p className="text-xs text-slate-400 mb-1">Packet Flows</p>
                     <p className="text-2xl font-bold text-cyan-500">
-                      {packetFlows.length}
+                      <span className="font-mono">{packetFlows.length}</span>
                     </p>
                   </div>
                 </div>
