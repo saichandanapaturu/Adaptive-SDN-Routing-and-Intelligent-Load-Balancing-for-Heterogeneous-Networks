@@ -87,6 +87,25 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
   const altPathStr = `${topCongested.source} → Router-Core → ${topCongested.target}`;
   const confidenceStr = `${Math.min(96, Math.round(82 + (topCongested.trafficLevel / 100) * 14))}%`;
 
+  // The chart is intentionally derived from the rolling prediction history and
+  // the current live link telemetry so it changes as the network changes.
+  const chartY = (value: number) => 90 - (Math.max(0, Math.min(100, value)) / 100) * 70;
+  const chartX = (index: number, total: number) => 8 + (index / Math.max(total - 1, 1)) * 72;
+  const observedValues = chartPoints.map((point) =>
+    Math.max(0, Math.min(100, point.predictedCongestion * 0.68 + linkTraffic * 0.32))
+  );
+  const observedPath = chartPoints
+    .map((_, index) => `${index === 0 ? 'M' : 'L'} ${chartX(index, chartPoints.length).toFixed(2)},${chartY(observedValues[index]).toFixed(2)}`)
+    .join(' ');
+  const observedFillPath = `${observedPath} L 80,90 L 8,90 Z`;
+  const predictedHistoryPath = chartPoints
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${chartX(index, chartPoints.length).toFixed(2)},${chartY(point.predictedCongestion).toFixed(2)}`)
+    .join(' ');
+  const forecastLift = latest.trend === 'increasing' ? 10 : latest.trend === 'decreasing' ? -7 : 3;
+  const forecastMid = Math.max(0, Math.min(100, latest.predictedCongestion + forecastLift * 0.55));
+  const forecastEnd = Math.max(0, Math.min(100, latest.predictedCongestion + forecastLift));
+  const forecastPath = `M 80,${chartY(latest.predictedCongestion).toFixed(2)} Q 90,${chartY(forecastMid).toFixed(2)} 100,${chartY(forecastEnd).toFixed(2)}`;
+
   return (
     <div className="space-y-6 text-slate-100 font-mono">
       {/* 1. HEADER BAR */}
@@ -230,12 +249,12 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
                   </defs>
                   {/* Observed area */}
                   <path
-                    d="M 0,75 Q 15,65 30,70 T 60,50 T 80,45 L 80,90 L 0,90 Z"
+                    d={observedFillPath}
                     fill="url(#observedGrad)"
                   />
                   {/* Observed solid line */}
                   <path
-                    d="M 0,75 Q 15,65 30,70 T 60,50 T 80,45"
+                    d={observedPath}
                     fill="none"
                     stroke="#22d3ee"
                     strokeWidth="2.5"
@@ -243,7 +262,16 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
                   />
                   {/* Predicted dashed line */}
                   <path
-                    d="M 80,45 Q 90,38 100,32"
+                    d={predictedHistoryPath}
+                    fill="none"
+                    stroke="#fbbf24"
+                    strokeWidth="2.5"
+                    strokeDasharray="3,3"
+                    strokeLinecap="round"
+                  />
+                  {/* Predicted forecast segment */}
+                  <path
+                    d={forecastPath}
                     fill="none"
                     stroke="#fbbf24"
                     strokeWidth="2.5"

@@ -10686,3 +10686,22 @@ Active Links now counts the unique topology edges used by current packet paths, 
 - [x] Trigger reroutes from actual or predicted congestion.
 - [x] Update packet path and reroute log together.
 - [x] Verify changing active-link values and live topology behavior.
+
+## Congestion Predictor graph refresh
+
+- [ ] Identify why the chart path is hardcoded and does not use the rolling prediction history.
+- [ ] Connect observed and predicted chart points to live prediction values.
+- [ ] Maintain a rolling time window so the graph changes after each telemetry update and remains visibly different after 30 seconds.
+- [ ] Keep the header, metric cards, reroute panel, feature stream, and other tabs unchanged.
+- [ ] Verify chart updates after multiple intervals and run typecheck/build.
+- [ ] Publish the focused graph-only fix.
+
+## Congestion Predictor graph refresh verification
+
+The graph was static because the SVG paths were hardcoded even though rolling predictions were available. The observed line now derives from rolling prediction values blended with current live link telemetry, the prediction history line uses the rolling prediction series, and the forecast segment follows the current trend. A 32-second telemetry wait completed successfully, the refreshed dashboard remained stable, typecheck and production build passed, and the latest browser console check returned no errors or warnings. Other panel sections were left unchanged.
+
+- [x] Replace hardcoded chart paths.
+- [x] Connect observed and predicted lines to live rolling data.
+- [x] Keep the forecast trajectory trend-aware.
+- [x] Verify after a 30-second window.
+- [x] Confirm no console errors.
