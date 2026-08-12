@@ -66,13 +66,32 @@ function portForNode(nodeId: string) {
   return (Array.from(nodeId).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 48) + 1;
 }
 
-function findPath(source: string, destination: string, links: NetworkLink[]): string[] {
+function edgeKey(source: string, target: string) {
+  return source < target ? `${source}::${target}` : `${target}::${source}`;
+}
+
+function pathEdgeKeys(path: string[]) {
+  return path.slice(0, -1).map((node, index) => edgeKey(node, path[index + 1]));
+}
+
+function pathsEqual(first: string[], second: string[]) {
+  return first.length === second.length && first.every((node, index) => node === second[index]);
+}
+
+function findPath(
+  source: string,
+  destination: string,
+  links: NetworkLink[],
+  avoidEdges: Set<string> = new Set(),
+  predictionDriven = false,
+): string[] {
   if (!source || !destination || source === destination) return source === destination && source ? [source] : [];
 
-  const queue: Array<{ node: string; path: string[] }> = [{ node: source, path: [source] }];
-  const visited = new Set<string>([source]);
+  const queue: Array<{ node: string; path: string[]; cost: number }> = [{ node: source, path: [source], cost: 0 }];
+  const bestCost = new Map<string, number>([[source, 0]]);
 
   while (queue.length > 0) {
+    queue.sort((left, right) => left.cost - right.cost);
     const current = queue.shift();
     if (!current) break;
 
@@ -80,17 +99,50 @@ function findPath(source: string, destination: string, links: NetworkLink[]): st
 
     const neighbors = links
       .filter(link => link.source === current.node || link.target === current.node)
-      .map(link => (link.source === current.node ? link.target : link.source));
+      .map(link => ({
+        link,
+        neighbor: link.source === current.node ? link.target : link.source,
+      }));
 
-    neighbors.forEach(neighbor => {
-      if (!visited.has(neighbor)) {
-        visited.add(neighbor);
-        queue.push({ node: neighbor, path: [...current.path, neighbor] });
+    neighbors.forEach(({ link, neighbor }) => {
+      if (avoidEdges.has(edgeKey(link.source, link.target))) return;
+
+      const statusPenalty = link.status === 'critical' ? 200 : link.status === 'warning' ? 8 : 0;
+      const forecastPenalty = predictionDriven && link.trafficLevel >= 55 ? 12 : 0;
+      const linkCost = 1 + link.trafficLevel / 24 + statusPenalty + forecastPenalty;
+      const nextCost = current.cost + linkCost;
+
+      if (nextCost < (bestCost.get(neighbor) ?? Number.POSITIVE_INFINITY)) {
+        bestCost.set(neighbor, nextCost);
+        queue.push({ node: neighbor, path: [...current.path, neighbor], cost: nextCost });
       }
     });
   }
 
   return [];
+}
+
+function countPacketActiveLinks(links: NetworkLink[], packetFlows: PacketFlow[]) {
+  const packetEdges = new Set(packetFlows.flatMap(flow => pathEdgeKeys(flow.path)));
+  return links.filter(link => packetEdges.has(edgeKey(link.source, link.target))).length;
+}
+
+function rerouteEventForFlow(
+  flow: PacketFlow,
+  newPath: string[],
+  nodes: NetworkNode[],
+  reason: string,
+): RerouteEvent {
+  const labels = new Map(nodes.map(node => [node.id, node.label]));
+  return {
+    id: `reroute-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: new Date(),
+    source: labels.get(flow.source) ?? flow.source,
+    destination: labels.get(flow.destination) ?? flow.destination,
+    reason,
+    oldPath: flow.path.map(nodeId => labels.get(nodeId) ?? nodeId),
+    newPath: newPath.map(nodeId => labels.get(nodeId) ?? nodeId),
+  };
 }
 
 function connectedPair(nodes: NetworkNode[], links: NetworkLink[]) {
@@ -155,7 +207,7 @@ function buildPrediction(links: NetworkLink[], previous?: PredictionData): Predi
   const averageTraffic = links.reduce((sum, link) => sum + link.trafficLevel, 0) / links.length;
   const peakTraffic = Math.max(...links.map(link => link.trafficLevel));
   const congestedRatio = links.filter(link => link.trafficLevel >= 68).length / links.length;
-  const predictedCongestion = clamp(averageTraffic * 0.72 + peakTraffic * 0.28 + (Math.random() - 0.5) * 5);
+  const predictedCongestion = clamp(averageTraffic * 0.25 + peakTraffic * 0.75 + (Math.random() - 0.5) * 3);
   const predictedPacketLoss = clamp(congestedRatio * 2.8 + Math.max(0, predictedCongestion - 65) * 0.045 + (Math.random() - 0.5) * 0.16, 0, 10);
   const previousCongestion = previous?.predictedCongestion ?? predictedCongestion;
   const delta = predictedCongestion - previousCongestion;
@@ -252,6 +304,8 @@ export function useLiveNetworkDataWithCustom() {
   const [tick, setTick] = useState(0);
   const nodesRef = useRef(nodes);
   const linksRef = useRef(links);
+  const packetFlowsRef = useRef<PacketFlow[]>(initialPacketFlows);
+  const predictionsRef = useRef<PredictionData[]>([buildPrediction(activeLinks)]);
   const tickRef = useRef(0);
 
   useEffect(() => {
@@ -268,9 +322,13 @@ export function useLiveNetworkDataWithCustom() {
     setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0, status: 'healthy' })));
     setPortStats(buildPortStats(activeNodes, activeLinks));
     setRerouteEvents([]);
-    setPredictions([buildPrediction(activeLinks)]);
+    const resetPredictions = [buildPrediction(activeLinks)];
+    predictionsRef.current = resetPredictions;
+    setPredictions(resetPredictions);
     const resetFlow = createPacketFlow(nextRoute.source, nextRoute.destination, activeLinks);
-    setPacketFlows(resetFlow ? [resetFlow] : []);
+    const resetFlows = resetFlow ? [resetFlow] : [];
+    packetFlowsRef.current = resetFlows;
+    setPacketFlows(resetFlows);
     setSelectedSource(nextRoute.source);
     setSelectedDestination(nextRoute.destination);
     tickRef.current = 0;
@@ -281,10 +339,13 @@ export function useLiveNetworkDataWithCustom() {
     const interval = window.setInterval(() => {
       const currentNodes = nodesRef.current;
       const currentLinks = linksRef.current;
+      const activeRouteEdges = new Set(packetFlowsRef.current.flatMap(flow => pathEdgeKeys(flow.path)));
+      const forecastHotspot = tickRef.current % 8 >= 5;
       const nextLinks = currentLinks.map(link => {
-        const drift = (Math.random() - 0.5) * 24;
-        const burst = Math.random() < 0.12 ? 22 : 0;
-        const trafficLevel = clamp(link.trafficLevel + drift + burst);
+        const drift = (Math.random() - 0.5) * 18;
+        const burst = Math.random() < 0.18 ? 24 : 0;
+        const predictedRouteBurst = forecastHotspot && activeRouteEdges.has(edgeKey(link.source, link.target)) ? 84 : 0;
+        const trafficLevel = clamp(link.trafficLevel * 0.58 + drift + burst + predictedRouteBurst);
         return { ...link, trafficLevel, status: statusForTraffic(trafficLevel) };
       });
       const nextNodes = currentNodes.map(node => {
@@ -300,36 +361,73 @@ export function useLiveNetworkDataWithCustom() {
       setLinks(nextLinks);
       setNodes(nextNodes);
       setPortStats(previous => buildPortStats(nextNodes, nextLinks, previous));
-      setPredictions(previous => [buildPrediction(nextLinks, previous[0]), ...previous.slice(0, 19)]);
+
+      const nextPrediction = buildPrediction(nextLinks, predictionsRef.current[0]);
+      const nextPredictions = [nextPrediction, ...predictionsRef.current.slice(0, 19)];
+      predictionsRef.current = nextPredictions;
+      setPredictions(nextPredictions);
 
       tickRef.current += 1;
       setTick(tickRef.current);
 
-      if (tickRef.current % 5 === 0 && Math.random() < 0.75) {
-        const event = buildRerouteEvent(nextNodes, nextLinks);
-        if (event) setRerouteEvents(previous => [event, ...previous.slice(0, 11)]);
+      const now = Date.now();
+      const linkByEdge = new Map(nextLinks.map(link => [edgeKey(link.source, link.target), link]));
+      const predictionPressure = nextPrediction.predictedCongestion >= 62
+        || nextPrediction.predictedPacketLoss >= 1.4
+        || nextPrediction.trend === 'increasing';
+      const reroutes: RerouteEvent[] = [];
+      const updated = packetFlowsRef.current
+        .map(flow => {
+          const progress = clamp(((now - flow.startTime) / flow.duration) * 100);
+          if (progress >= 100) return null;
+
+          const currentEdges = pathEdgeKeys(flow.path);
+          const routeHasPressure = currentEdges.some(key => {
+            const link = linkByEdge.get(key);
+            return Boolean(link && (link.trafficLevel >= 68 || link.status !== 'healthy'));
+          });
+          const shouldReroute = routeHasPressure || (predictionPressure && currentEdges.some(key => {
+            const link = linkByEdge.get(key);
+            return Boolean(link && link.trafficLevel >= 52);
+          }));
+
+          if (shouldReroute) {
+            const alternatePath = findPath(flow.source, flow.destination, nextLinks, new Set(currentEdges), true);
+            if (alternatePath.length > 1 && !pathsEqual(alternatePath, flow.path)) {
+              reroutes.push(rerouteEventForFlow(
+                flow,
+                alternatePath,
+                nextNodes,
+                predictionPressure ? 'Load Balancing' : 'Congestion Detected',
+              ));
+              return {
+                ...flow,
+                path: alternatePath,
+                progress: 0,
+                startTime: now,
+              };
+            }
+          }
+
+          return { ...flow, progress };
+        })
+        .filter((flow): flow is PacketFlow => Boolean(flow));
+
+      if (reroutes.length > 0) {
+        setRerouteEvents(previous => [...reroutes, ...previous].slice(0, 12));
       }
 
-      const now = Date.now();
-      setPacketFlows(previous => {
-        const updated = previous
-          .map(flow => ({ ...flow, progress: clamp(((now - flow.startTime) / flow.duration) * 100) }))
-          .filter(flow => flow.progress < 100);
-        const path = findPath(selectedSource, selectedDestination, nextLinks);
+      const path = findPath(selectedSource, selectedDestination, nextLinks, new Set(), predictionPressure);
+      if (updated.length === 0 && path.length > 1) {
+        const firstFlow = createPacketFlow(selectedSource, selectedDestination, nextLinks);
+        if (firstFlow) updated.push(firstFlow);
+      } else if (updated.length < 6 && path.length > 1 && Math.random() < 0.72) {
+        const nextFlow = createPacketFlow(selectedSource, selectedDestination, nextLinks);
+        if (nextFlow) updated.push(nextFlow);
+      }
 
-        // Always replenish a valid route when the last packet expires. This
-        // guarantees visible activity in production instead of depending on a
-        // random tick winning the emission check.
-        if (updated.length === 0 && path.length > 1) {
-          const firstFlow = createPacketFlow(selectedSource, selectedDestination, nextLinks);
-          if (firstFlow) updated.push(firstFlow);
-        } else if (updated.length < 6 && path.length > 1 && Math.random() < 0.72) {
-          const nextFlow = createPacketFlow(selectedSource, selectedDestination, nextLinks);
-          if (nextFlow) updated.push(nextFlow);
-        }
-
-        return updated;
-      });
+      packetFlowsRef.current = updated;
+      setPacketFlows(updated);
     }, 1000);
 
     return () => window.clearInterval(interval);
@@ -341,12 +439,14 @@ export function useLiveNetworkDataWithCustom() {
     setSelectedSource(validSource);
     setSelectedDestination(validDestination);
     const nextFlow = createPacketFlow(validSource, validDestination, activeLinks);
-    setPacketFlows(nextFlow ? [nextFlow] : []);
+    const nextFlows = nextFlow ? [nextFlow] : [];
+    packetFlowsRef.current = nextFlows;
+    setPacketFlows(nextFlows);
   };
 
   const getNetworkStats = () => ({
     totalNodes: nodes.length,
-    activeLinks: links.filter(link => link.status === 'healthy').length,
+    activeLinks: countPacketActiveLinks(links, packetFlows),
     congestedLinks: links.filter(link => link.status === 'warning' || link.status === 'critical').length,
     failedLinks: links.filter(link => link.status === 'critical').length,
     maxTraffic: Math.max(...links.map(link => link.trafficLevel), 0),

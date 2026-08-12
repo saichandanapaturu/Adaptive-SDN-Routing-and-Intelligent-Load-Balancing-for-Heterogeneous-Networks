@@ -10663,3 +10663,26 @@ The previous implementation could leave the published canvas without a packet be
 - [x] Replenish packets after expiration.
 - [x] Verify visible packet in the refreshed preview.
 - [x] Run typecheck/build and restart.
+
+## Active links and prediction-driven rerouting
+
+- [ ] Inspect how Active Links is currently calculated and why it can show zero while packets move.
+- [ ] Count links used by active packet paths and expose that live count in the summary card.
+- [ ] Preserve healthy-link counts separately from packet-active link counts where the UI needs both meanings.
+- [ ] Detect congested or predicted-congested links before each packet update.
+- [ ] Find a healthier alternate path and reroute active packets when the current route is congested.
+- [ ] Update packet paths, source/destination movement, reroute log, and prediction data consistently.
+- [ ] Show a clear no-alternate-path state without inventing a route.
+- [ ] Run typecheck and production build.
+- [ ] Verify active-link values, congestion-triggered rerouting, packet animation, and reroute logs.
+- [ ] Save and publish the update.
+
+## Active-link and rerouting verification result
+
+Active Links now counts the unique topology edges used by current packet paths, so a two-edge packet route reports 2 even if those links are warning or critical. The live update loop now derives predicted pressure from the current prediction, marks active-route hotspots, scores alternate paths by traffic and health, avoids pressured route edges, resets rerouted packet progress, and writes real oldPath/newPath entries to the reroute log. The refreshed preview showed Active Links changing to 2 and 3 as packet paths changed. Typecheck and production build passed; the latest console output showed only historical ResizeObserver entries from earlier sessions and no new errors during this update.
+
+- [x] Correct Active Links semantics.
+- [x] Add health- and traffic-weighted alternate path selection.
+- [x] Trigger reroutes from actual or predicted congestion.
+- [x] Update packet path and reroute log together.
+- [x] Verify changing active-link values and live topology behavior.
