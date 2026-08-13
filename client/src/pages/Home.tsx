@@ -55,17 +55,17 @@ export default function Home() {
       {isSidebarExpanded && <button type="button" className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setIsSidebarExpanded(false)} aria-label="Close navigation menu" />}
       <aside className={`fixed inset-y-0 left-0 z-50 flex-col border-r border-cyan-500/15 bg-[#0b1018] text-slate-200 shadow-[12px_0_40px_rgba(0,0,0,0.22)] transition-[width] duration-200 ${isSidebarExpanded ? 'flex w-72' : 'hidden w-[92px] lg:flex'}`}>
         <div className={`flex min-h-[86px] items-center border-b border-cyan-500/15 ${isSidebarExpanded ? 'justify-between px-4' : 'justify-center px-2'}`}>
-          <button type="button" onClick={() => setIsSidebarExpanded((open) => !open)} className="group flex items-center gap-3 rounded-md p-1.5 transition hover:bg-cyan-400/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70" aria-label={isSidebarExpanded ? 'Collapse AIFE navigation menu' : 'Expand AIFE navigation menu'} aria-expanded={isSidebarExpanded}>
+          <button type="button" onClick={() => setIsSidebarExpanded((open) => !open)} className="group flex items-center gap-3 rounded-md p-1.5 transition hover:bg-cyan-400/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70" aria-label={isSidebarExpanded ? 'Collapse Nexus navigation menu' : 'Expand Nexus navigation menu'} aria-expanded={isSidebarExpanded}>
             <span className="relative flex h-12 w-12 shrink-0 items-center justify-center border border-cyan-400/60 bg-cyan-400/[0.08] text-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.08)] transition group-hover:border-cyan-200">
               <span className="h-3 w-3 bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,0.85)]" aria-hidden="true" />
-              <svg viewBox="0 0 48 48" className="absolute h-8 w-8 opacity-0" role="img" aria-label="AIFE mark">
+              <svg viewBox="0 0 48 48" className="absolute h-8 w-8 opacity-0" role="img" aria-label="Nexus mark">
                 <path d="M24 8 10 34h28L24 8Z" fill="none" stroke="currentColor" strokeWidth="2.2" />
                 <circle cx="24" cy="8" r="3.2" fill="currentColor" />
                 <circle cx="10" cy="34" r="3.2" fill="currentColor" />
                 <circle cx="38" cy="34" r="3.2" fill="currentColor" />
               </svg>
             </span>
-            {isSidebarExpanded && <span className="text-left"><span className="block font-mono text-lg font-bold tracking-tight text-white">AIFE</span><span className="block font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">Control plane</span></span>}
+            {isSidebarExpanded && <span className="text-left"><span className="block font-mono text-lg font-bold tracking-tight text-white">NEXUS</span><span className="block font-mono text-[9px] uppercase tracking-[0.2em] text-slate-500">Control plane</span></span>}
           </button>
           {isSidebarExpanded && <div className="flex items-center gap-1 text-slate-400"><button type="button" className="rounded-md p-2 transition hover:bg-white/[0.06] hover:text-white" aria-label="Search dashboard"><Search className="h-4 w-4" /></button><button type="button" onClick={() => setIsSidebarExpanded(false)} className="rounded-md p-2 transition hover:bg-white/[0.06] hover:text-white" aria-label="Collapse sidebar"><PanelLeft className="h-4 w-4" /></button></div>}
         </div>
@@ -113,7 +113,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button type="button" onClick={() => setIsSidebarExpanded((open) => !open)} className="relative flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.18)] transition hover:border-cyan-300/70 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70" aria-label="Toggle AIFE navigation menu" aria-expanded={isSidebarExpanded}>
+              <button type="button" onClick={() => setIsSidebarExpanded((open) => !open)} className="relative flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-400/10 text-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.18)] transition hover:border-cyan-300/70 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70" aria-label="Toggle Nexus navigation menu" aria-expanded={isSidebarExpanded}>
                 <svg viewBox="0 0 48 48" className="h-8 w-8" role="img" aria-hidden="true">
                   <path d="M24 8 10 34h28L24 8Z" fill="none" stroke="currentColor" strokeWidth="2.2" />
                   <circle cx="24" cy="8" r="3.2" fill="currentColor" />
@@ -123,10 +123,10 @@ export default function Home() {
               </button>
               <div>
                 <h1 className="font-mono text-2xl font-bold tracking-tight text-white">
-                  AIFE <span className="text-emerald-400">/</span> Dashboard
+                  NEXUS <span className="text-emerald-400">/</span> Dashboard
                 </h1>
                 <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400">
-                  AI Intelligent Flow Engine · Network Monitoring
+                  Network Operations Center · Intelligent Flow Engine
                 </p>
               </div>
             </div>
