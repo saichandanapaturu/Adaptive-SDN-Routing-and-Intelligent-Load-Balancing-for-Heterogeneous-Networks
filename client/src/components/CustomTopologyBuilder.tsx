@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Download, Upload } from 'lucide-react';
+import { Plus, Trash2, Download, Upload, Monitor } from 'lucide-react';
+import { useTopologyContext } from '@/contexts/TopologyContext';
 
 export const CustomTopologyBuilder: React.FC = () => {
   const {
@@ -22,6 +23,18 @@ export const CustomTopologyBuilder: React.FC = () => {
     exportTopology,
     importTopology,
   } = useCustomTopology();
+
+  const { setIsUsingCustom } = useTopologyContext();
+  const [successMessage, setSuccessMessage] = useState('');
+
+  const handleAddToDashboard = () => {
+    if (nodes.length === 0) {
+      setSuccessMessage('Add at least one node before pushing to the dashboard.');
+      return;
+    }
+    setIsUsingCustom(true);
+    setSuccessMessage('Custom topology added to dashboard successfully! Switch to Monitor to view live telemetry.');
+  };
 
   const [nodeLabel, setNodeLabel] = useState('');
   const [nodeType, setNodeType] = useState<'switch' | 'host' | 'router'>('switch');
@@ -249,30 +262,42 @@ export const CustomTopologyBuilder: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Import/Export */}
+      {/* Import/Export & Dashboard Handoff */}
       <Card className="bg-slate-900/50 border-slate-800">
         <CardHeader>
           <CardTitle className="text-lg font-bold">Topology Management</CardTitle>
+          <CardDescription>Export, import, or push your custom network to the live dashboard monitor.</CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-3">
-          <Button onClick={handleExport} className="bg-blue-600 hover:bg-blue-700">
-            <Download className="w-4 h-4 mr-2" />
-            Export Topology
-          </Button>
-          <label>
-            <Button className="bg-blue-600 hover:bg-blue-700" asChild>
-              <span>
-                <Upload className="w-4 h-4 mr-2" />
-                Import Topology
-              </span>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={handleAddToDashboard} className="bg-emerald-600 font-semibold text-white hover:bg-emerald-500">
+              <Monitor className="w-4 h-4 mr-2" />
+              Add to Dashboard
             </Button>
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleImport}
-              className="hidden"
-            />
-          </label>
+            <Button onClick={handleExport} variant="outline" className="border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700">
+              <Download className="w-4 h-4 mr-2" />
+              Export Topology
+            </Button>
+            <label>
+              <Button variant="outline" className="border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700" asChild>
+                <span>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Import Topology
+                </span>
+              </Button>
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleImport}
+                className="hidden"
+              />
+            </label>
+          </div>
+          {successMessage && (
+            <p className="text-sm font-medium text-emerald-300" role="status">
+              {successMessage}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
