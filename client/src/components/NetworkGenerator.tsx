@@ -4,8 +4,9 @@ import { Boxes, Check, Network, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTopologyContext } from '@/contexts/TopologyContext';
-import { buildGeneratedNetwork, GENERATOR_LIMITS, GeneratorCounts, GeneratorStrategy } from '@/lib/networkGenerator';
+import { buildGeneratedNetwork, GENERATOR_LIMITS, CustomTopologyType, GeneratorCounts, GeneratorStrategy } from '@/lib/networkGenerator';
 
 interface NetworkGeneratorProps {
   onGenerated: () => void;
@@ -29,7 +30,8 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
   const { setGeneratedNodes, setGeneratedLinks, setIsUsingGenerated } = useTopologyContext();
   const [counts, setCounts] = useState<GeneratorCounts>(initialCounts);
   const [strategy, setStrategy] = useState<GeneratorStrategy>('recommended');
-  const [message, setMessage] = useState('Set device counts, choose a topology strategy, then generate a separate live network.');
+  const [customTopologyType, setCustomTopologyType] = useState<CustomTopologyType>('ring');
+  const [message, setMessage] = useState('Set device counts, choose a strategy or user-defined topology type, then generate a live network.');
 
   const totalNodes = useMemo(() => Object.values(counts).reduce((sum, count) => sum + count, 0), [counts]);
 
@@ -45,11 +47,12 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
       return;
     }
 
-    const generated = buildGeneratedNetwork(counts, strategy);
+    const generated = buildGeneratedNetwork(counts, strategy, customTopologyType);
     setGeneratedNodes(generated.nodes);
     setGeneratedLinks(generated.links);
     setIsUsingGenerated(true);
-    setMessage(`Generated ${generated.nodes.length} nodes and ${generated.links.length} links using the ${strategy === 'recommended' ? 'recommended' : 'user-defined'} topology.`);
+    const modeDesc = strategy === 'recommended' ? 'recommended topology' : `user-defined ${customTopologyType.toUpperCase()} topology`;
+    setMessage(`Generated ${generated.nodes.length} nodes and ${generated.links.length} links using the ${modeDesc}.`);
     onGenerated();
   };
 
@@ -92,10 +95,31 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
             </button>
             <button type="button" onClick={() => setStrategy('custom')} className={`flex items-start gap-3 border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${strategy === 'custom' ? 'border-cyan-300/80 bg-cyan-400/[0.1]' : 'border-slate-700 bg-slate-950/30 hover:border-cyan-400/50'}`}>
               <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center border ${strategy === 'custom' ? 'border-cyan-300/80 text-cyan-200' : 'border-slate-700 text-slate-500'}`}><Network className="h-4 w-4" /></span>
-              <span><span className="block font-semibold text-slate-100">User-defined topology</span><span className="mt-1 block text-xs leading-5 text-slate-400">Create a connected ring with cross-layer links from your counts.</span></span>
+              <span><span className="block font-semibold text-slate-100">User-defined topology</span><span className="mt-1 block text-xs leading-5 text-slate-400">Choose a specific topology pattern from the dropdown below.</span></span>
               {strategy === 'custom' && <Check className="ml-auto h-4 w-4 text-cyan-200" />}
             </button>
           </div>
+
+          {strategy === 'custom' && (
+            <div className="space-y-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+              <label className="block text-sm font-semibold text-cyan-200" htmlFor="custom-topology-select">
+                User-Defined Topology Type
+              </label>
+              <Select value={customTopologyType} onValueChange={(value: CustomTopologyType) => setCustomTopologyType(value)}>
+                <SelectTrigger id="custom-topology-select" className="border-cyan-500/30 bg-slate-800 text-slate-100">
+                  <SelectValue placeholder="Select topology type" />
+                </SelectTrigger>
+                <SelectContent className="border-slate-700 bg-slate-900 text-slate-100">
+                  <SelectItem value="ring">Ring Topology (Circular path with cross-links)</SelectItem>
+                  <SelectItem value="star">Star Topology (Centralized core hub & spokes)</SelectItem>
+                  <SelectItem value="mesh">Mesh Topology (High interconnectivity)</SelectItem>
+                  <SelectItem value="tree">Tree Topology (Hierarchical branching structure)</SelectItem>
+                  <SelectItem value="bus">Bus Topology (Sequential linear backbone)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-400">Nexus will connect your {totalNodes} nodes using the selected {customTopologyType.toUpperCase()} architectural layout.</p>
+            </div>
+          )}
 
           <div className="flex flex-col gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="max-w-2xl text-sm text-slate-400" role="status">{message}</p>
@@ -107,7 +131,7 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
       <Card className="border-slate-800 bg-slate-900/50">
         <CardContent className="flex items-start gap-3 py-5 text-sm text-slate-400">
           <Network className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-          <p>Generated networks are stored separately and become the live source for the Monitor, Statistics, Prediction, and Reroute Log panels. Your existing Custom Topology remains available independently.</p>
+          <p>Generated networks become the active source for live monitoring, statistics, predictions, and reroute logs. Your existing Custom Topology remains safely stored and editable independently.</p>
         </CardContent>
       </Card>
     </div>
