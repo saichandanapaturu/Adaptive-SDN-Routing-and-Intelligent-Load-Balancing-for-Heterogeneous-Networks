@@ -266,26 +266,28 @@ function createPacketFlow(source: string, destination: string, links: NetworkLin
 }
 
 export function useLiveNetworkDataWithCustom() {
-  const { customNodes, customLinks } = useTopologyContext();
+  const { customNodes, customLinks, generatedNodes, generatedLinks, isUsingCustom, isUsingGenerated } = useTopologyContext();
   const hasCustomTopology = customNodes.length > 0;
+  const hasGeneratedTopology = generatedNodes.length > 0;
+  const activeMode = isUsingGenerated && hasGeneratedTopology ? 'generated' : isUsingCustom && hasCustomTopology ? 'custom' : 'default';
 
   const activeNodes = useMemo(
-    () => (hasCustomTopology ? customNodes : DEFAULT_NODES),
-    [customNodes, hasCustomTopology],
+    () => (activeMode === 'generated' ? generatedNodes : activeMode === 'custom' ? customNodes : DEFAULT_NODES),
+    [activeMode, customNodes, generatedNodes],
   );
 
   const activeNodeIds = useMemo(() => new Set(activeNodes.map(node => node.id)), [activeNodes]);
   const activeLinks = useMemo(
     () => {
-      const sourceLinks = hasCustomTopology ? customLinks : DEFAULT_LINKS;
+      const sourceLinks = activeMode === 'generated' ? generatedLinks : activeMode === 'custom' ? customLinks : DEFAULT_LINKS;
       return sourceLinks.filter(link => activeNodeIds.has(link.source) && activeNodeIds.has(link.target));
     },
-    [activeNodeIds, customLinks, hasCustomTopology],
+    [activeMode, activeNodeIds, customLinks, generatedLinks],
   );
 
   const topologyKey = useMemo(
-    () => `${hasCustomTopology ? 'custom' : 'default'}:${activeNodes.map(node => node.id).join('|')}:${activeLinks.map(link => `${link.source}-${link.target}`).join('|')}`,
-    [activeLinks, activeNodes, hasCustomTopology],
+    () => `${activeMode}:${activeNodes.map(node => node.id).join('|')}:${activeLinks.map(link => `${link.source}-${link.target}`).join('|')}`,
+    [activeLinks, activeMode, activeNodes],
   );
 
   const initial = useMemo(() => initialRoute(activeNodes, activeLinks), [activeLinks, activeNodes]);
@@ -466,6 +468,8 @@ export function useLiveNetworkDataWithCustom() {
     updateRoute,
     getNetworkStats,
     hasCustomTopology,
+    hasGeneratedTopology,
+    activeMode,
     telemetryTick: tick,
   };
 }

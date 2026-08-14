@@ -10786,3 +10786,12 @@ The dashboard now presents a dark fixed sidebar at desktop widths with the AIFE 
 - [ ] Keep sidebar topology controls, source/destination routing, live packets, and all telemetry panels unchanged.
 - [ ] Verify typecheck, build, and visual layout.
 - [ ] Publish the focused cleanup.
+
+## Separate Network Generator
+
+- [ ] Inspect topology data types, context setters, live-data source selection, and current sidebar icons.
+- [ ] Add a separate Network Generator panel with switch, router, hub, and host count inputs.
+- [ ] Add Recommended and Custom topology generation options without modifying Custom Topology Builder.
+- [ ] Add a distinct sidebar icon and route the generated network into a separate generated-topology mode.
+- [ ] Verify counts, topology rendering, live packets, telemetry panels, and existing Custom Topology behavior.
+- [ ] Publish the feature.

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 export interface NetworkNode {
   id: string;
   label: string;
-  type: 'switch' | 'host' | 'router';
+  type: 'switch' | 'host' | 'router' | 'hub';
   status: 'healthy' | 'warning' | 'critical';
   x: number;
   y: number;

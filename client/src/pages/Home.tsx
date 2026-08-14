@@ -3,6 +3,7 @@ import { useLiveNetworkDataWithCustom } from '@/hooks/useLiveNetworkDataWithCust
 import { useTopologyContext } from '@/contexts/TopologyContext';
 import { ImprovedNetworkTopology } from '@/components/ImprovedNetworkTopology';
 import { CustomTopologyBuilder } from '@/components/CustomTopologyBuilder';
+import { NetworkGenerator } from '@/components/NetworkGenerator';
 import { PortStatistics } from '@/components/PortStatistics';
 import { RerouteLog } from '@/components/RerouteLog';
 import { PredictionPanel } from '@/components/PredictionPanel';
@@ -10,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Activity, AlertTriangle, BarChart3, BrainCircuit, CircleDot, Clock, GitBranch, Network, PanelLeft, ScrollText, Search, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Boxes, BrainCircuit, CircleDot, Clock, GitBranch, Network, PanelLeft, ScrollText, Search, Zap } from 'lucide-react';
 
 export default function Home() {
   const {
@@ -25,10 +26,12 @@ export default function Home() {
     updateRoute,
     getNetworkStats,
     hasCustomTopology,
+    hasGeneratedTopology,
+    activeMode,
     telemetryTick,
   } = useLiveNetworkDataWithCustom();
 
-  const { isUsingCustom, setIsUsingCustom } = useTopologyContext();
+  const { isUsingCustom, isUsingGenerated, setIsUsingCustom } = useTopologyContext();
 
   const stats = getNetworkStats();
   const [activeTab, setActiveTab] = useState('monitor');
@@ -88,12 +91,17 @@ export default function Home() {
               <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${activeTab === 'reroute' ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><ScrollText className="h-4 w-4" /></span>
               {isSidebarExpanded && <span>Reroute Log</span>}
             </button>
+            <button type="button" onClick={() => setActiveTab('generator')} title="Network Generator" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${activeTab === 'generator' || isUsingGenerated ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${activeTab === 'generator' || isUsingGenerated ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><Boxes className="h-4 w-4" /></span>
+              {isSidebarExpanded && <span>Network Generator</span>}
+            </button>
           </div>
 
           {isSidebarExpanded && <div className="mt-9 px-2 text-[10px] font-mono uppercase tracking-[0.2em] text-slate-600">Topology</div>}
           <div className="mt-3 space-y-3">
-            <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(false); }} title="Dashboard Topology" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${!isUsingCustom ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
-              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${!isUsingCustom ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><Network className="h-4 w-4" /></span>
+            <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(false); }} title="Dashboard Topology" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${!isUsingCustom && !isUsingGenerated ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}
+>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center border transition ${!isUsingCustom && !isUsingGenerated ? 'border-cyan-300/80 bg-cyan-400/[0.14] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)]' : 'border-slate-700/70 bg-slate-950/30 text-slate-500 group-hover:border-cyan-400/60 group-hover:text-cyan-200'}`}><Network className="h-4 w-4" /></span>
               {isSidebarExpanded && <span>Dashboard Topology</span>}
             </button>
             <button type="button" onClick={() => { setActiveTab('monitor'); setIsUsingCustom(true); }} title="Custom Topology" className={`group flex w-full items-center gap-3 rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${isSidebarExpanded ? 'px-2 py-2' : 'justify-center p-1.5'} ${isUsingCustom ? 'text-cyan-100' : 'text-slate-400 hover:text-cyan-100'}`}>
@@ -209,6 +217,9 @@ export default function Home() {
             <TabsTrigger value="reroute" className="justify-start text-left data-[state=active]:bg-slate-800">
               Reroute Log
             </TabsTrigger>
+            <TabsTrigger value="generator" className="justify-start text-left data-[state=active]:bg-slate-800">
+              Network Generator
+            </TabsTrigger>
           </TabsList>
 
           {/* Monitor Tab */}
@@ -220,16 +231,18 @@ export default function Home() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <CardTitle className="text-lg font-bold">
-                        {hasCustomTopology ? 'Live Custom Network Topology' : 'Network Topology'}
+                        {activeMode === 'generated' ? 'Generated Network Topology' : hasCustomTopology ? 'Live Custom Network Topology' : 'Network Topology'}
                       </CardTitle>
                       <CardDescription>
-                        {hasCustomTopology
-                          ? 'Dashboard telemetry is driven by your saved custom nodes and links.'
-                          : 'Real-time network visualization with packet flow'}
+                        {activeMode === 'generated'
+                          ? 'Live telemetry is driven by the network generated from your device counts.'
+                          : hasCustomTopology
+                            ? 'Dashboard telemetry is driven by your saved custom nodes and links.'
+                            : 'Real-time network visualization with packet flow'}
                       </CardDescription>
                     </div>
                     <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                      {hasCustomTopology ? `CUSTOM LIVE · TICK ${telemetryTick}` : 'DEFAULT LIVE'}
+                      {activeMode === 'generated' ? `GENERATED LIVE · TICK ${telemetryTick}` : hasCustomTopology ? `CUSTOM LIVE · TICK ${telemetryTick}` : 'DEFAULT LIVE'}
                     </div>
                   </div>
                 </CardHeader>
@@ -345,6 +358,11 @@ export default function Home() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Network Generator Tab */}
+          <TabsContent value="generator" className="mt-0 min-w-0 flex-1">
+            <NetworkGenerator onGenerated={() => setActiveTab('monitor')} />
           </TabsContent>
 
           {/* Statistics Tab */}
