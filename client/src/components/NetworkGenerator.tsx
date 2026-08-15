@@ -1,5 +1,6 @@
-/* Style: Nexus Network Generator — dark NOC tooling, square instrument controls, cyan generation signal, and precise technical copy. */
+/* Style: Nexus Network Generator — dark NOC tooling, rounded instrument controls, cyan generation signal, and precise technical copy. */
 import React, { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Boxes, Check, Network, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,7 +32,6 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
   const [counts, setCounts] = useState<GeneratorCounts>(initialCounts);
   const [strategy, setStrategy] = useState<GeneratorStrategy>('recommended');
   const [customTopologyType, setCustomTopologyType] = useState<CustomTopologyType>('ring');
-  const [message, setMessage] = useState('Set device counts, choose a strategy or user-defined topology type, then generate a live network.');
 
   const totalNodes = useMemo(() => Object.values(counts).reduce((sum, count) => sum + count, 0), [counts]);
 
@@ -43,7 +43,7 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
 
   const handleGenerate = () => {
     if (totalNodes < 2) {
-      setMessage('Add at least two devices so Nexus can create a connected network.');
+      toast.error('Add at least two devices so Nexus can create a connected network.');
       return;
     }
 
@@ -52,17 +52,19 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
     setGeneratedLinks(generated.links);
     setIsUsingGenerated(true);
     const modeDesc = strategy === 'recommended' ? 'recommended topology' : `user-defined ${customTopologyType.toUpperCase()} topology`;
-    setMessage(`Generated ${generated.nodes.length} nodes and ${generated.links.length} links using the ${modeDesc}.`);
+    toast.success('Network generated', {
+      description: `${generated.nodes.length} nodes and ${generated.links.length} links using the ${modeDesc}.`,
+    });
     onGenerated();
   };
 
   return (
     <div className="space-y-6">
-      <Card className="border-cyan-500/20 bg-slate-900/50">
+      <Card className="glass rounded-2xl border-cyan-500/20 bg-slate-900/30 backdrop-blur-xl">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <CardTitle className="flex items-center gap-2 text-lg font-bold"><Boxes className="h-5 w-5 text-cyan-300" /> Network Generator</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg font-semibold"><Boxes className="h-5 w-5 text-cyan-300" /> Network Generator</CardTitle>
               <CardDescription>Create a separate multi-node network without changing your existing Custom Topology.</CardDescription>
             </div>
             <div className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-200">{totalNodes} nodes requested</div>
@@ -79,7 +81,7 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
                   max={GENERATOR_LIMITS.max}
                   value={counts[key]}
                   onChange={(event) => handleCountChange(key, event.target.value)}
-                  className="border-slate-700 bg-slate-800 font-mono text-slate-100"
+                  className="border-white/10 bg-slate-800/50 backdrop-blur-md font-mono text-slate-100"
                   aria-label={`${label} count`}
                 />
                 <span className="block text-[11px] text-slate-500">{hint} · 0–{GENERATOR_LIMITS.max}</span>
@@ -88,28 +90,28 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <button type="button" onClick={() => setStrategy('recommended')} className={`flex items-start gap-3 border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${strategy === 'recommended' ? 'border-cyan-300/80 bg-cyan-400/[0.1]' : 'border-slate-700 bg-slate-950/30 hover:border-cyan-400/50'}`}>
-              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center border ${strategy === 'recommended' ? 'border-cyan-300/80 text-cyan-200' : 'border-slate-700 text-slate-500'}`}><Sparkles className="h-4 w-4" /></span>
+            <button type="button" onClick={() => setStrategy('recommended')} className={`backdrop-blur-md flex items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${strategy === 'recommended' ? 'border-cyan-300/80 bg-cyan-400/[0.1]' : 'border-white/10 bg-slate-950/20 hover:border-cyan-400/50'}`}>
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${strategy === 'recommended' ? 'border-cyan-300/80 text-cyan-200' : 'border-slate-700 text-slate-500'}`}><Sparkles className="h-4 w-4" /></span>
               <span><span className="block font-semibold text-slate-100">Recommended topology</span><span className="mt-1 block text-xs leading-5 text-slate-400">Build a layered backbone with resilient device attachments.</span></span>
               {strategy === 'recommended' && <Check className="ml-auto h-4 w-4 text-cyan-200" />}
             </button>
-            <button type="button" onClick={() => setStrategy('custom')} className={`flex items-start gap-3 border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${strategy === 'custom' ? 'border-cyan-300/80 bg-cyan-400/[0.1]' : 'border-slate-700 bg-slate-950/30 hover:border-cyan-400/50'}`}>
-              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center border ${strategy === 'custom' ? 'border-cyan-300/80 text-cyan-200' : 'border-slate-700 text-slate-500'}`}><Network className="h-4 w-4" /></span>
+            <button type="button" onClick={() => setStrategy('custom')} className={`backdrop-blur-md flex items-start gap-3 rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 ${strategy === 'custom' ? 'border-cyan-300/80 bg-cyan-400/[0.1]' : 'border-white/10 bg-slate-950/20 hover:border-cyan-400/50'}`}>
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${strategy === 'custom' ? 'border-cyan-300/80 text-cyan-200' : 'border-slate-700 text-slate-500'}`}><Network className="h-4 w-4" /></span>
               <span><span className="block font-semibold text-slate-100">User-defined topology</span><span className="mt-1 block text-xs leading-5 text-slate-400">Choose a specific topology pattern from the dropdown below.</span></span>
               {strategy === 'custom' && <Check className="ml-auto h-4 w-4 text-cyan-200" />}
             </button>
           </div>
 
           {strategy === 'custom' && (
-            <div className="space-y-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+            <div className="glass space-y-2 rounded-xl border border-cyan-500/25 bg-cyan-500/[0.04] p-4 backdrop-blur-md">
               <label className="block text-sm font-semibold text-cyan-200" htmlFor="custom-topology-select">
                 User-Defined Topology Type
               </label>
               <Select value={customTopologyType} onValueChange={(value: CustomTopologyType) => setCustomTopologyType(value)}>
-                <SelectTrigger id="custom-topology-select" className="border-cyan-500/30 bg-slate-800 text-slate-100">
+                <SelectTrigger id="custom-topology-select" className="border-cyan-500/30 bg-slate-800/50 backdrop-blur-md text-slate-100">
                   <SelectValue placeholder="Select topology type" />
                 </SelectTrigger>
-                <SelectContent className="border-slate-700 bg-slate-900 text-slate-100">
+                <SelectContent className="glass border-white/10 bg-slate-900/80 backdrop-blur-xl text-slate-100">
                   <SelectItem value="ring">Ring Topology (Circular path with cross-links)</SelectItem>
                   <SelectItem value="star">Star Topology (Centralized core hub & spokes)</SelectItem>
                   <SelectItem value="mesh">Mesh Topology (High interconnectivity)</SelectItem>
@@ -122,13 +124,13 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
           )}
 
           <div className="flex flex-col gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-2xl text-sm text-slate-400" role="status">{message}</p>
+            <p className="max-w-2xl text-sm text-slate-400">Set device counts, choose a strategy or user-defined topology type, then generate a live network.</p>
             <Button type="button" onClick={handleGenerate} className="shrink-0 bg-cyan-600 font-semibold text-white hover:bg-cyan-500"><Boxes className="mr-2 h-4 w-4" /> Generate Network</Button>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="border-slate-800 bg-slate-900/50">
+      <Card className="glass rounded-2xl border-white/10 bg-slate-900/30 backdrop-blur-xl">
         <CardContent className="flex items-start gap-3 py-5 text-sm text-slate-400">
           <Network className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
           <p>Generated networks become the active source for live monitoring, statistics, predictions, and reroute logs. Your existing Custom Topology remains safely stored and editable independently.</p>

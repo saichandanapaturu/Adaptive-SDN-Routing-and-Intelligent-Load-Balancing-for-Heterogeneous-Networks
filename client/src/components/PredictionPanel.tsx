@@ -114,9 +114,9 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
   return (
     <div className="space-y-6 text-slate-100 font-mono">
       {/* 1. HEADER BAR */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-xl gap-4">
+      <div className="glass flex flex-col md:flex-row items-start md:items-center justify-between border border-white/10 bg-slate-900/40 p-4 rounded-xl gap-4 backdrop-blur-xl">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-white font-sans flex items-center gap-2">
+          <h2 className="text-xl font-semibold tracking-tight text-white font-sans flex items-center gap-2">
             Congestion Predictor
           </h2>
           <p className="text-xs text-slate-400 uppercase tracking-wider mt-0.5">
@@ -131,7 +131,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
           <div className="bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-md text-slate-300 font-mono">
             {utcTime || '12:04:47 UTC'}
           </div>
-          <div className="bg-cyan-950/60 border border-cyan-800/60 px-3 py-1.5 rounded-md text-cyan-400 font-bold tracking-wider">
+          <div className="bg-cyan-950/60 border border-cyan-800/60 px-3 py-1.5 rounded-md text-cyan-400 font-semibold tracking-wider">
             MININET · WSN-24
           </div>
         </div>
@@ -140,10 +140,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
       {/* 2. FIVE METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* MODEL */}
-        <Card className="bg-slate-900/60 border-slate-800 p-4 flex flex-col justify-between">
+        <Card className="glass border-white/10 bg-slate-900/30 p-4 backdrop-blur-xl flex flex-col justify-between">
           <div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-sans mb-1">MODEL</div>
-            <div className="text-2xl font-bold text-cyan-400">{modelName}</div>
+            <div className="text-2xl font-semibold text-cyan-400">{modelName}</div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
             <span>{modelSubtext}</span>
@@ -152,10 +152,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
         </Card>
 
         {/* ACCURACY */}
-        <Card className="bg-slate-900/60 border-slate-800 p-4 flex flex-col justify-between">
+        <Card className="glass border-white/10 bg-slate-900/30 p-4 backdrop-blur-xl flex flex-col justify-between">
           <div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-sans mb-1">ACCURACY</div>
-            <div className="text-2xl font-bold text-emerald-400">{accuracyPct}</div>
+            <div className="text-2xl font-semibold text-emerald-400">{accuracyPct}</div>
             <div className="w-full bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
               <div className="bg-emerald-500 h-full" style={{ width: accuracyPct }} />
             </div>
@@ -167,10 +167,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
         </Card>
 
         {/* LEAD TIME */}
-        <Card className="bg-slate-900/60 border-slate-800 p-4 flex flex-col justify-between">
+        <Card className="glass border-white/10 bg-slate-900/30 p-4 backdrop-blur-xl flex flex-col justify-between">
           <div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-sans mb-1">LEAD TIME</div>
-            <div className="text-2xl font-bold text-amber-400">{leadTime}</div>
+            <div className="text-2xl font-semibold text-amber-400">{leadTime}</div>
             <div className="w-full bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
               <div className="bg-amber-500 h-full" style={{ width: '100%' }} />
             </div>
@@ -182,10 +182,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
         </Card>
 
         {/* PREDICTED HOTSPOTS */}
-        <Card className="bg-slate-900/60 border-slate-800 p-4 flex flex-col justify-between">
+        <Card className="glass border-white/10 bg-slate-900/30 p-4 backdrop-blur-xl flex flex-col justify-between">
           <div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-sans mb-1">PREDICTED HOTSPOTS</div>
-            <div className="text-2xl font-bold text-amber-400">{congestedLinksList.length} links</div>
+            <div className="text-2xl font-semibold text-amber-400">{congestedLinksList.length} links</div>
             <div className="w-full bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
               <div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, congestedLinksList.length * 50)}%` }} />
             </div>
@@ -197,10 +197,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
         </Card>
 
         {/* AVOIDED DROPS */}
-        <Card className="bg-slate-900/60 border-slate-800 p-4 flex flex-col justify-between">
+        <Card className="glass border-white/10 bg-slate-900/30 p-4 backdrop-blur-xl flex flex-col justify-between">
           <div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-sans mb-1">AVOIDED DROPS</div>
-            <div className="text-2xl font-bold text-emerald-400">{avoidedDrops} pkts</div>
+            <div className="text-2xl font-semibold text-emerald-400">{avoidedDrops} pkts</div>
             <div className="w-full bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
               <div className="bg-emerald-500 h-full" style={{ width: '78%' }} />
             </div>
@@ -215,11 +215,11 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
       {/* 3 & 4. MAIN CHART & SIDE PANELS GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* MAIN CHART (2 cols) */}
-        <Card className="bg-slate-900/60 border-slate-800 p-5 lg:col-span-2 flex flex-col justify-between">
+        <Card className="glass border-white/10 bg-slate-900/30 p-5 backdrop-blur-xl lg:col-span-2 flex flex-col justify-between">
           <div>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
               <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-200 font-sans">
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-200 font-sans">
                   CONGESTION · OBSERVED vs PREDICTED (t+1.0s)
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">Real-time throughput telemetry & ML forecast trajectory</p>
@@ -237,9 +237,9 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
             </div>
 
             {/* Crisp chart surface with explicit scale and live markers */}
-            <div className="relative h-72 md:h-80 w-full overflow-hidden rounded-lg border border-slate-700/90 bg-[#07101c] shadow-[inset_0_1px_0_rgba(148,163,184,0.08)]">
+            <div className="glass relative h-72 md:h-80 w-full overflow-hidden rounded-lg border border-white/10 bg-[#07101c]/70 backdrop-blur-xl">
               <div className="absolute inset-y-3 right-3 w-[19%] rounded-r border-l border-dashed border-amber-400/70 bg-amber-400/[0.07]" aria-hidden="true" />
-              <div className="absolute right-4 top-4 z-10 rounded border border-amber-400/50 bg-slate-950/90 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-amber-300 shadow-lg">
+              <div className="absolute right-4 top-4 z-10 rounded border border-amber-400/50 bg-slate-950/90 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-amber-300 shadow-lg">
                 Forecast +1.0s
               </div>
 
@@ -326,8 +326,8 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
                 <span>-45s</span>
                 <span>-30s</span>
                 <span>-15s</span>
-                <span className="font-bold text-cyan-300">NOW</span>
-                <span className="font-bold text-amber-300">+1s</span>
+                <span className="font-semibold text-cyan-300">NOW</span>
+                <span className="font-semibold text-amber-300">+1s</span>
               </div>
             </div>
           </div>
@@ -341,37 +341,37 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
         {/* RIGHT COLUMN: PRE-EMPTIVE REROUTE & FEATURE STREAM */}
         <div className="space-y-6">
           {/* 4. PRE-EMPTIVE REROUTE PANEL */}
-          <Card className="bg-slate-900/60 border-amber-500/40 p-4 relative overflow-hidden">
+          <Card className="glass border-amber-500/30 bg-slate-900/30 p-4 backdrop-blur-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-bl-full pointer-events-none" />
             <div className="flex items-center gap-2 mb-3">
-              <div className="p-1.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
                 <ShieldAlert className="w-4 h-4" />
               </div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 font-sans">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-400 font-sans">
                 PRE-EMPTIVE REROUTE
               </h3>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed mb-4">
-              Model predicts link <strong className="text-amber-300">{topCongested.source} → {topCongested.target}</strong> will exceed utilization threshold ({topCongested.trafficLevel}% traffic). Pre-emptively shifting flow to alternate path <strong className="text-cyan-300">{altPathStr}</strong> to prevent packet drop.
+              Model predicts link <strong className="text-amber-300">{topCongested.source} → {topCongested.target}</strong> will exceed utilization threshold ({topCongested.trafficLevel.toFixed(0)}% traffic). Pre-emptively shifting flow to alternate path <strong className="text-cyan-300">{altPathStr}</strong> to prevent packet drop.
             </p>
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-800">
               <div>
                 <div className="text-[10px] text-slate-400 uppercase tracking-wider">CONFIDENCE</div>
-                <div className="text-lg font-bold text-emerald-400">{confidenceStr}</div>
+                <div className="text-lg font-semibold text-emerald-400">{confidenceStr}</div>
               </div>
               <div>
                 <div className="text-[10px] text-slate-400 uppercase tracking-wider">LEAD TIME</div>
-                <div className="text-lg font-bold text-amber-400">{leadTime}</div>
+                <div className="text-lg font-semibold text-amber-400">{leadTime}</div>
               </div>
             </div>
           </Card>
 
           {/* 5. FEATURE STREAM PANEL */}
-          <Card className="bg-slate-900/60 border-slate-800 p-4">
+          <Card className="glass border-white/10 bg-slate-900/30 p-4 backdrop-blur-xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-cyan-400" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-sans">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-200 font-sans">
                   FEATURE STREAM
                 </h3>
               </div>
@@ -383,7 +383,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">bandwidth usage</span>
-                  <span className="font-bold text-cyan-400">{bandwidthUsagePct}%</span>
+                  <span className="font-semibold text-cyan-400">{bandwidthUsagePct}%</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                   <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${bandwidthUsagePct}%` }} />
@@ -394,7 +394,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">queue size</span>
-                  <span className="font-bold text-amber-400">{queueSizePkts} pkts</span>
+                  <span className="font-semibold text-amber-400">{queueSizePkts} pkts</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                   <div className="bg-amber-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, (queueSizePkts / 200) * 100)}%` }} />
@@ -405,7 +405,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">link delay</span>
-                  <span className="font-bold text-emerald-400">{linkDelayMs} ms</span>
+                  <span className="font-semibold text-emerald-400">{linkDelayMs} ms</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                   <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, (linkDelayMs / 80) * 100)}%` }} />
@@ -416,7 +416,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">packet loss</span>
-                  <span className="font-bold text-emerald-400">{packetLossPct}%</span>
+                  <span className="font-semibold text-emerald-400">{packetLossPct}%</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                   <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, packetLossPct * 20)}%` }} />
@@ -427,7 +427,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">switch CPU</span>
-                  <span className="font-bold text-cyan-400">{switchCpuPct}%</span>
+                  <span className="font-semibold text-cyan-400">{switchCpuPct}%</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                   <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${switchCpuPct}%` }} />

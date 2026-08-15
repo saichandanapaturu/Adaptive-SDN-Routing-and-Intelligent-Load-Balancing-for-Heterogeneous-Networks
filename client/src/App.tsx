@@ -33,7 +33,7 @@ function App() {
       >
         <TopologyProvider>
           <TooltipProvider>
-            <Toaster />
+            <Toaster theme="dark" position="bottom-right" richColors closeButton />
             <Router />
           </TooltipProvider>
         </TopologyProvider>

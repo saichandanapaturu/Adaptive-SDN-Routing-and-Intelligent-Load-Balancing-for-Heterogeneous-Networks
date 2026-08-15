@@ -64,13 +64,15 @@ export function useCustomTopology() {
     return JSON.stringify({ nodes: context.customNodes, links: context.customLinks }, null, 2);
   };
 
-  const importTopology = (jsonData: string) => {
+  const importTopology = (jsonData: string): boolean => {
     try {
       const { nodes: importedNodes, links: importedLinks } = JSON.parse(jsonData);
       context.setCustomNodes(importedNodes);
       context.setCustomLinks(importedLinks);
+      return true;
     } catch (error) {
       console.error('Failed to import topology:', error);
+      return false;
     }
   };
 

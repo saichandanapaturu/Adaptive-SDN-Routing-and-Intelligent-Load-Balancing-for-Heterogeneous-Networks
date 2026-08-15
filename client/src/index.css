@@ -175,6 +175,27 @@
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.025), 0 16px 40px rgb(2 6 23 / 0.18);
   }
 
+  /* Glassmorphism: frosted-panel treatment layered on top of each surface's own
+     background/border color so semantic accent colors (amber alert, red critical,
+     etc.) still come through the blur instead of being replaced by it. */
+  .glass {
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.08),
+      inset 0 0 0 1px rgb(255 255 255 / 0.04),
+      0 8px 32px -8px rgb(2 6 23 / 0.5);
+  }
+
+  .glass-strong {
+    backdrop-filter: blur(32px) saturate(160%);
+    -webkit-backdrop-filter: blur(32px) saturate(160%);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.1),
+      inset 0 0 0 1px rgb(255 255 255 / 0.05),
+      0 24px 64px -12px rgb(2 6 23 / 0.65);
+  }
+
   @media (min-width: 640px) {
     .container {
       padding-left: 1.5rem; /* 24px - tablet padding */
