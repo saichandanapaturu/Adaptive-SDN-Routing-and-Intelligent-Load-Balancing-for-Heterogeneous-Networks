@@ -79,7 +79,12 @@ export default function Home() {
 
   const handleRemoveSource = (nodeId: string) => {
     const nextSources = selectedSources.filter(id => id !== nodeId);
-    updateMultiRoutes(nextSources.length > 0 ? nextSources : [nodes[0]?.id ?? ''], selectedDestinations);
+    updateMultiRoutes(nextSources, selectedDestinations);
+  };
+
+  const handleRemoveDestination = (nodeId: string) => {
+    const nextDests = selectedDestinations.filter(id => id !== nodeId);
+    updateMultiRoutes(selectedSources, nextDests);
   };
 
   const handleDestinationSelectChange = (nodeId: string) => {
@@ -403,9 +408,7 @@ export default function Home() {
                             return node ? (
                               <span key={id} className="inline-flex items-center gap-1.5 rounded border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 font-mono text-[11px] text-cyan-200">
                                 {node.label}
-                                {selectedSources.length > 1 && (
-                                  <button type="button" onClick={() => handleRemoveSource(id)} className="text-cyan-400 hover:text-cyan-200">×</button>
-                                )}
+                                <button type="button" onClick={() => handleRemoveSource(id)} className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/40" aria-label={`Remove source ${node.label}`}>×</button>
                               </span>
                             ) : null;
                           })}
@@ -435,6 +438,7 @@ export default function Home() {
                             return node ? (
                               <span key={id} className="inline-flex items-center gap-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-mono text-[11px] text-emerald-200">
                                 ★ {node.label}
+                                <button type="button" onClick={() => handleRemoveDestination(id)} className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/40" aria-label={`Remove destination ${node.label}`}>×</button>
                               </span>
                             ) : null;
                           })}

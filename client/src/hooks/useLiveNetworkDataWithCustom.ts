@@ -290,27 +290,20 @@ export function useLiveNetworkDataWithCustom() {
     [activeLinks, activeMode, activeNodes],
   );
 
-  const initial = useMemo(() => initialRoute(activeNodes, activeLinks), [activeLinks, activeNodes]);
-  const initialPacketFlows = useMemo(() => {
-    const firstFlow = createPacketFlow(initial.source, initial.destination, activeLinks);
-    return firstFlow ? [firstFlow] : [];
-  }, [activeLinks, initial.destination, initial.source]);
   const [nodes, setNodes] = useState<NetworkNode[]>(activeNodes);
   const [links, setLinks] = useState<NetworkLink[]>(activeLinks);
   const [portStats, setPortStats] = useState<PortStat[]>(() => buildPortStats(activeNodes, activeLinks));
   const [rerouteEvents, setRerouteEvents] = useState<RerouteEvent[]>([]);
   const [predictions, setPredictions] = useState<PredictionData[]>(() => [buildPrediction(activeLinks)]);
-  const [packetFlows, setPacketFlows] = useState<PacketFlow[]>(() => initialPacketFlows);
-  const hostNodes = activeNodes.filter(node => node.type === 'host');
-  const defaultMaxPairs = Math.max(1, Math.floor(hostNodes.length / 2));
-  const [sourceCount, setSourceCount] = useState<number>(1);
-  const [destinationCount, setDestinationCount] = useState<number>(1);
-  const [selectedSources, setSelectedSources] = useState<string[]>([initial.source]);
-  const [selectedDestinations, setSelectedDestinations] = useState<string[]>([initial.destination]);
+  const [packetFlows, setPacketFlows] = useState<PacketFlow[]>([]);
+  const [sourceCount, setSourceCount] = useState<number>(0);
+  const [destinationCount, setDestinationCount] = useState<number>(0);
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
+  const [selectedDestinations, setSelectedDestinations] = useState<string[]>([]);
   const [tick, setTick] = useState(0);
   const nodesRef = useRef(nodes);
   const linksRef = useRef(links);
-  const packetFlowsRef = useRef<PacketFlow[]>(initialPacketFlows);
+  const packetFlowsRef = useRef<PacketFlow[]>([]);
   const predictionsRef = useRef<PredictionData[]>([buildPrediction(activeLinks)]);
   const tickRef = useRef(0);
 
@@ -323,7 +316,6 @@ export function useLiveNetworkDataWithCustom() {
   }, [links]);
 
   useEffect(() => {
-    const nextRoute = initialRoute(activeNodes, activeLinks);
     setNodes(activeNodes.map(node => ({ ...node, trafficLevel: 0, status: 'healthy' })));
     setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0, status: 'healthy' })));
     setPortStats(buildPortStats(activeNodes, activeLinks));
@@ -331,17 +323,12 @@ export function useLiveNetworkDataWithCustom() {
     const resetPredictions = [buildPrediction(activeLinks)];
     predictionsRef.current = resetPredictions;
     setPredictions(resetPredictions);
-    const resetFlow = createPacketFlow(nextRoute.source, nextRoute.destination, activeLinks);
-    const resetFlows = resetFlow ? [resetFlow] : [];
-    packetFlowsRef.current = resetFlows;
-    setPacketFlows(resetFlows);
-    const hostNodes = activeNodes.filter(node => node.type === 'host');
-    const reqDestCount = Math.max(1, Math.floor(hostNodes.length / 2));
-    const defaultDsts = hostNodes.length > 0 ? hostNodes.slice(0, reqDestCount).map(n => n.id) : [nextRoute.destination];
-    setSelectedSources([nextRoute.source]);
-    setSelectedDestinations(defaultDsts);
-    setSourceCount(1);
-    setDestinationCount(defaultDsts.length);
+    packetFlowsRef.current = [];
+    setPacketFlows([]);
+    setSelectedSources([]);
+    setSelectedDestinations([]);
+    setSourceCount(0);
+    setDestinationCount(0);
     tickRef.current = 0;
     setTick(0);
   }, [topologyKey, activeLinks, activeNodes]);
@@ -428,19 +415,18 @@ export function useLiveNetworkDataWithCustom() {
         setRerouteEvents(previous => [...reroutes, ...previous].slice(0, 12));
       }
 
-      const activeSrcs = selectedSources.length > 0 ? selectedSources : [initial.source];
-      const activeDsts = selectedDestinations.length > 0 ? selectedDestinations : [initial.destination];
-
-      if (updated.length < 12 && tickRef.current % 3 === 0) {
-        const src = activeSrcs[Math.floor(Math.random() * activeSrcs.length)];
-        const dst = activeDsts[Math.floor(Math.random() * activeDsts.length)];
-        if (src && dst && src !== dst) {
-          const staggeredFlow = createPacketFlow(src, dst, nextLinks);
-          if (staggeredFlow) updated.push(staggeredFlow);
+      if (selectedSources.length > 0 && selectedDestinations.length > 0) {
+        if (updated.length < 12 && tickRef.current % 3 === 0) {
+          const src = selectedSources[Math.floor(Math.random() * selectedSources.length)];
+          const dst = selectedDestinations[Math.floor(Math.random() * selectedDestinations.length)];
+          if (src && dst && src !== dst) {
+            const staggeredFlow = createPacketFlow(src, dst, nextLinks);
+            if (staggeredFlow) updated.push(staggeredFlow);
+          }
+        } else if (updated.length === 0 && selectedSources[0] && selectedDestinations[0]) {
+          const baseFlow = createPacketFlow(selectedSources[0], selectedDestinations[0], nextLinks);
+          if (baseFlow) updated.push(baseFlow);
         }
-      } else if (updated.length === 0 && activeSrcs[0] && activeDsts[0]) {
-        const baseFlow = createPacketFlow(activeSrcs[0], activeDsts[0], nextLinks);
-        if (baseFlow) updated.push(baseFlow);
       }
 
       packetFlowsRef.current = updated;
