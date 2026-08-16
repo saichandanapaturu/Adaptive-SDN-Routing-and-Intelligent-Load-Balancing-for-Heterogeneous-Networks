@@ -335,10 +335,13 @@ export function useLiveNetworkDataWithCustom() {
     const resetFlows = resetFlow ? [resetFlow] : [];
     packetFlowsRef.current = resetFlows;
     setPacketFlows(resetFlows);
+    const hostNodes = activeNodes.filter(node => node.type === 'host');
+    const reqDestCount = Math.max(1, Math.floor(hostNodes.length / 2));
+    const defaultDsts = hostNodes.length > 0 ? hostNodes.slice(0, reqDestCount).map(n => n.id) : [nextRoute.destination];
     setSelectedSources([nextRoute.source]);
-    setSelectedDestinations([nextRoute.destination]);
+    setSelectedDestinations(defaultDsts);
     setSourceCount(1);
-    setDestinationCount(1);
+    setDestinationCount(defaultDsts.length);
     tickRef.current = 0;
     setTick(0);
   }, [topologyKey, activeLinks, activeNodes]);
@@ -447,19 +450,20 @@ export function useLiveNetworkDataWithCustom() {
     return () => window.clearInterval(interval);
   }, [selectedDestinations, selectedSources, topologyKey]);
 
-  const updateMultiRoutes = (sources: string[], destinations: string[], newSourceCount: number, newDestCount: number) => {
-    setSourceCount(newSourceCount);
-    setDestinationCount(newDestCount);
+  const updateMultiRoutes = (sources: string[], destinations: string[]) => {
     setSelectedSources(sources);
     setSelectedDestinations(destinations);
+    setSourceCount(sources.length);
+    setDestinationCount(destinations.length);
 
     const newFlows: PacketFlow[] = [];
-    sources.forEach((src, idx) => {
-      const dst = destinations[idx % destinations.length];
-      if (src && dst && src !== dst) {
-        const flow = createPacketFlow(src, dst, activeLinks);
-        if (flow) newFlows.push(flow);
-      }
+    sources.forEach((src) => {
+      destinations.forEach((dst) => {
+        if (src && dst && src !== dst) {
+          const flow = createPacketFlow(src, dst, activeLinks);
+          if (flow) newFlows.push(flow);
+        }
+      });
     });
     if (newFlows.length === 0 && sources[0] && destinations[0]) {
       const flow = createPacketFlow(sources[0], destinations[0], activeLinks);
