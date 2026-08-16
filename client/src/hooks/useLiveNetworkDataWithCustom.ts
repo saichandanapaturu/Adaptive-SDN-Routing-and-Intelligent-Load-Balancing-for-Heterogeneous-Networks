@@ -261,7 +261,7 @@ function createPacketFlow(source: string, destination: string, links: NetworkLin
     path,
     progress: 0,
     startTime: now,
-    duration: 2200 + Math.random() * 1800,
+    duration: 1100 + Math.random() * 700,
   };
 }
 
@@ -416,16 +416,13 @@ export function useLiveNetworkDataWithCustom() {
       }
 
       if (selectedSources.length > 0 && selectedDestinations.length > 0) {
-        if (updated.length < 12 && tickRef.current % 3 === 0) {
+        if (updated.length < 16 && tickRef.current % 1 === 0) {
           const src = selectedSources[Math.floor(Math.random() * selectedSources.length)];
           const dst = selectedDestinations[Math.floor(Math.random() * selectedDestinations.length)];
           if (src && dst && src !== dst) {
             const staggeredFlow = createPacketFlow(src, dst, nextLinks);
             if (staggeredFlow) updated.push(staggeredFlow);
           }
-        } else if (updated.length === 0 && selectedSources[0] && selectedDestinations[0]) {
-          const baseFlow = createPacketFlow(selectedSources[0], selectedDestinations[0], nextLinks);
-          if (baseFlow) updated.push(baseFlow);
         }
       }
 
