@@ -263,7 +263,7 @@ function createPacketFlow(source: string, destination: string, links: NetworkLin
     path,
     progress: 0,
     startTime: now,
-    duration: 1100 + Math.random() * 700,
+    duration: 1800 + Math.random() * 900,
   };
 }
 
