@@ -117,8 +117,8 @@ export const CustomTopologyBuilder: React.FC = () => {
             nodes={nodes}
             links={links}
             packetFlows={[]}
-            selectedSource=""
-            selectedDestination=""
+            selectedSources={[]}
+            selectedDestinations={[]}
             onNodeSelect={setSelectedNodeId}
             isInteractive={false}
           />

@@ -6,8 +6,8 @@ interface ImprovedNetworkTopologyProps {
   nodes: NetworkNode[];
   links: NetworkLink[];
   packetFlows: PacketFlow[];
-  selectedSource: string;
-  selectedDestination: string;
+  selectedSources: string[];
+  selectedDestinations: string[];
   onNodeSelect?: (nodeId: string) => void;
   isInteractive?: boolean;
   onCanvasClick?: (x: number, y: number) => void;
@@ -135,8 +135,8 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
   nodes,
   links,
   packetFlows,
-  selectedSource,
-  selectedDestination,
+  selectedSources,
+  selectedDestinations,
   onNodeSelect,
   isInteractive = false,
   onCanvasClick,
@@ -262,7 +262,9 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
         const pos = positions.get(node.id);
         if (!pos) return;
         const color = statusColor(node.status);
-        const selected = node.id === selectedSource || node.id === selectedDestination;
+        const isSource = selectedSources.includes(node.id);
+        const isDestination = selectedDestinations.includes(node.id);
+        const selected = isSource || isDestination;
         const radius = selected ? 24 : 20;
         const label = node.label.length > 22 ? `${node.label.slice(0, 20)}…` : node.label;
 
@@ -304,7 +306,8 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
         ctx.restore();
 
         if (selected) {
-          drawPill(ctx, node.id === selectedSource ? 'SRC' : 'DST', pos.x, pos.y - radius - 26, COLORS.cyan, { fontSize: 10 });
+          const badgeText = isSource && isDestination ? 'SRC/DST' : isSource ? 'SRC' : 'DST';
+          drawPill(ctx, badgeText, pos.x, pos.y - radius - 26, COLORS.cyan, { fontSize: 10 });
         }
       });
 
@@ -380,7 +383,7 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
       if (animationFrame) window.cancelAnimationFrame(animationFrame);
       if (packetAnimationFrame) window.cancelAnimationFrame(packetAnimationFrame);
     };
-  }, [links, nodes, packetFlows, selectedDestination, selectedSource]);
+  }, [links, nodes, packetFlows, selectedDestinations, selectedSources]);
 
   return (
     <canvas

@@ -48,9 +48,11 @@ export default function Home() {
     rerouteEvents,
     predictions,
     packetFlows,
-    selectedSource,
-    selectedDestination,
-    updateRoute,
+    selectedSources,
+    selectedDestinations,
+    sourceCount,
+    destinationCount,
+    updateMultiRoutes,
     getNetworkStats,
     hasCustomTopology,
     hasGeneratedTopology,
@@ -65,19 +67,34 @@ export default function Home() {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
 
-  const handleSourceChange = (nodeId: string) => {
-    updateRoute(nodeId, selectedDestination);
+  const hostNodes = useMemo(() => nodes.filter(node => node.type === 'host'), [nodes]);
+  const maxPairs = useMemo(() => Math.max(1, Math.floor(hostNodes.length / 2)), [hostNodes]);
+
+  const handleSourceCountChange = (newCount: number) => {
+    const clampedCount = Math.min(Math.max(1, newCount), maxPairs);
+    const availableHosts = hostNodes.length > 0 ? hostNodes : nodes;
+    const nextSources = availableHosts.slice(0, clampedCount).map(n => n.id);
+    const remaining = availableHosts.slice(clampedCount);
+    const nextDests = remaining.length > 0 ? remaining.slice(0, destinationCount).map(n => n.id) : selectedDestinations;
+    updateMultiRoutes(nextSources, nextDests, clampedCount, destinationCount);
   };
 
-  const handleDestinationChange = (nodeId: string) => {
-    updateRoute(selectedSource, nodeId);
+  const handleDestinationCountChange = (newCount: number) => {
+    const clampedCount = Math.min(Math.max(1, newCount), maxPairs);
+    const availableHosts = hostNodes.length > 0 ? hostNodes : nodes;
+    const nextSources = selectedSources.length > 0 ? selectedSources : [availableHosts[0]?.id ?? ''];
+    const nextDests = availableHosts.slice(sourceCount, sourceCount + clampedCount).map(n => n.id);
+    updateMultiRoutes(nextSources, nextDests.length > 0 ? nextDests : [availableHosts[1]?.id ?? availableHosts[0]?.id ?? ''], sourceCount, clampedCount);
   };
 
   const handleNodeSelect = (nodeId: string) => {
-    if (nodeId === selectedSource) {
-      handleDestinationChange(nodeId);
+    const availableHosts = hostNodes.length > 0 ? hostNodes : nodes;
+    if (selectedSources.includes(nodeId)) {
+      const nextDests = Array.from(new Set([...selectedDestinations, nodeId]));
+      updateMultiRoutes(selectedSources, nextDests, sourceCount, destinationCount);
     } else {
-      handleSourceChange(nodeId);
+      const nextSources = Array.from(new Set([...selectedSources, nodeId])).slice(0, maxPairs);
+      updateMultiRoutes(nextSources, selectedDestinations, nextSources.length, destinationCount);
     }
   };
 
@@ -103,7 +120,8 @@ export default function Home() {
   };
 
   const jumpToNode = (nodeId: string) => {
-    handleSourceChange(nodeId);
+    const availableHosts = hostNodes.length > 0 ? hostNodes : nodes;
+    updateMultiRoutes([nodeId], selectedDestinations, 1, destinationCount);
     setActiveTab('monitor');
     setIsCommandOpen(false);
   };
@@ -350,43 +368,65 @@ export default function Home() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Source/Destination Selector */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="mb-2 flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_rgba(34,211,238,0.7)]" />
-                        Source Node
-                      </label>
-                      <Select value={selectedSource} onValueChange={handleSourceChange}>
-                        <SelectTrigger className="border-white/10 bg-slate-800/50 backdrop-blur-md">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="glass border-white/10 bg-slate-900/80 backdrop-blur-xl">
-                          {nodes.map(node => (
-                            <SelectItem key={node.id} value={node.id}>
-                              {node.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  {/* Multi-Source & Multi-Destination Configuration */}
+                  <div className="space-y-4 rounded-xl border border-white/10 bg-slate-950/40 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Multi-Path Parallel Packet Flow</p>
+                        <p className="text-xs text-slate-400">Configure multiple sources and destinations (max hosts / 2 = {maxPairs}) for simultaneous traffic streams and path switching.</p>
+                      </div>
+                      <div className="flex items-center gap-3 font-mono text-xs text-slate-300">
+                        <span className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-cyan-200">{selectedSources.length} Sources Active</span>
+                        <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-emerald-200">{selectedDestinations.length} Destinations Active</span>
+                      </div>
                     </div>
-                    <div>
-                      <label className="mb-2 flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)]" />
-                        Destination Node
-                      </label>
-                      <Select value={selectedDestination} onValueChange={handleDestinationChange}>
-                        <SelectTrigger className="border-white/10 bg-slate-800/50 backdrop-blur-md">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="glass border-white/10 bg-slate-900/80 backdrop-blur-xl">
-                          {nodes.map(node => (
-                            <SelectItem key={node.id} value={node.id}>
-                              {node.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-2 flex items-center justify-between font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-300">
+                          <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_5px_rgba(34,211,238,0.7)]" /> Source Hosts Count</span>
+                          <span className="text-slate-400">{sourceCount} / {maxPairs}</span>
+                        </label>
+                        <input
+                          type="range"
+                          min="1"
+                          max={maxPairs}
+                          value={sourceCount}
+                          onChange={(e) => handleSourceCountChange(Number(e.target.value))}
+                          className="w-full accent-cyan-400 cursor-pointer"
+                        />
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {selectedSources.map(id => {
+                            const node = nodes.find(n => n.id === id);
+                            return node ? (
+                              <span key={id} className="rounded border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 font-mono text-[10px] text-cyan-200">{node.label}</span>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-2 flex items-center justify-between font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-300">
+                          <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)]" /> Destination Hosts Count</span>
+                          <span className="text-slate-400">{destinationCount} / {maxPairs}</span>
+                        </label>
+                        <input
+                          type="range"
+                          min="1"
+                          max={maxPairs}
+                          value={destinationCount}
+                          onChange={(e) => handleDestinationCountChange(Number(e.target.value))}
+                          className="w-full accent-emerald-400 cursor-pointer"
+                        />
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {selectedDestinations.map(id => {
+                            const node = nodes.find(n => n.id === id);
+                            return node ? (
+                              <span key={id} className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-200">{node.label}</span>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -395,8 +435,8 @@ export default function Home() {
                     nodes={nodes}
                     links={links}
                     packetFlows={packetFlows}
-                    selectedSource={selectedSource}
-                    selectedDestination={selectedDestination}
+                    selectedSources={selectedSources}
+                    selectedDestinations={selectedDestinations}
                     onNodeSelect={handleNodeSelect}
                   />
 

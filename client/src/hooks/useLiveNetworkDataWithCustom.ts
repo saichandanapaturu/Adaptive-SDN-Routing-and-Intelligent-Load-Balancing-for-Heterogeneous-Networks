@@ -301,8 +301,12 @@ export function useLiveNetworkDataWithCustom() {
   const [rerouteEvents, setRerouteEvents] = useState<RerouteEvent[]>([]);
   const [predictions, setPredictions] = useState<PredictionData[]>(() => [buildPrediction(activeLinks)]);
   const [packetFlows, setPacketFlows] = useState<PacketFlow[]>(() => initialPacketFlows);
-  const [selectedSource, setSelectedSource] = useState(initial.source);
-  const [selectedDestination, setSelectedDestination] = useState(initial.destination);
+  const hostNodes = activeNodes.filter(node => node.type === 'host');
+  const defaultMaxPairs = Math.max(1, Math.floor(hostNodes.length / 2));
+  const [sourceCount, setSourceCount] = useState<number>(1);
+  const [destinationCount, setDestinationCount] = useState<number>(1);
+  const [selectedSources, setSelectedSources] = useState<string[]>([initial.source]);
+  const [selectedDestinations, setSelectedDestinations] = useState<string[]>([initial.destination]);
   const [tick, setTick] = useState(0);
   const nodesRef = useRef(nodes);
   const linksRef = useRef(links);
@@ -331,8 +335,10 @@ export function useLiveNetworkDataWithCustom() {
     const resetFlows = resetFlow ? [resetFlow] : [];
     packetFlowsRef.current = resetFlows;
     setPacketFlows(resetFlows);
-    setSelectedSource(nextRoute.source);
-    setSelectedDestination(nextRoute.destination);
+    setSelectedSources([nextRoute.source]);
+    setSelectedDestinations([nextRoute.destination]);
+    setSourceCount(1);
+    setDestinationCount(1);
     tickRef.current = 0;
     setTick(0);
   }, [topologyKey, activeLinks, activeNodes]);
@@ -419,13 +425,19 @@ export function useLiveNetworkDataWithCustom() {
         setRerouteEvents(previous => [...reroutes, ...previous].slice(0, 12));
       }
 
-      const path = findPath(selectedSource, selectedDestination, nextLinks, new Set(), predictionPressure);
-      if (updated.length === 0 && path.length > 1) {
-        const firstFlow = createPacketFlow(selectedSource, selectedDestination, nextLinks);
-        if (firstFlow) updated.push(firstFlow);
-      } else if (updated.length < 6 && path.length > 1 && Math.random() < 0.72) {
-        const nextFlow = createPacketFlow(selectedSource, selectedDestination, nextLinks);
-        if (nextFlow) updated.push(nextFlow);
+      const activeSrcs = selectedSources.length > 0 ? selectedSources : [initial.source];
+      const activeDsts = selectedDestinations.length > 0 ? selectedDestinations : [initial.destination];
+
+      if (updated.length < 12 && tickRef.current % 3 === 0) {
+        const src = activeSrcs[Math.floor(Math.random() * activeSrcs.length)];
+        const dst = activeDsts[Math.floor(Math.random() * activeDsts.length)];
+        if (src && dst && src !== dst) {
+          const staggeredFlow = createPacketFlow(src, dst, nextLinks);
+          if (staggeredFlow) updated.push(staggeredFlow);
+        }
+      } else if (updated.length === 0 && activeSrcs[0] && activeDsts[0]) {
+        const baseFlow = createPacketFlow(activeSrcs[0], activeDsts[0], nextLinks);
+        if (baseFlow) updated.push(baseFlow);
       }
 
       packetFlowsRef.current = updated;
@@ -433,17 +445,28 @@ export function useLiveNetworkDataWithCustom() {
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [selectedDestination, selectedSource, topologyKey]);
+  }, [selectedDestinations, selectedSources, topologyKey]);
 
-  const updateRoute = (source: string, destination: string) => {
-    const validSource = activeNodeIds.has(source) ? source : activeNodes[0]?.id ?? '';
-    const validDestination = activeNodeIds.has(destination) ? destination : activeNodes[1]?.id ?? '';
-    setSelectedSource(validSource);
-    setSelectedDestination(validDestination);
-    const nextFlow = createPacketFlow(validSource, validDestination, activeLinks);
-    const nextFlows = nextFlow ? [nextFlow] : [];
-    packetFlowsRef.current = nextFlows;
-    setPacketFlows(nextFlows);
+  const updateMultiRoutes = (sources: string[], destinations: string[], newSourceCount: number, newDestCount: number) => {
+    setSourceCount(newSourceCount);
+    setDestinationCount(newDestCount);
+    setSelectedSources(sources);
+    setSelectedDestinations(destinations);
+
+    const newFlows: PacketFlow[] = [];
+    sources.forEach((src, idx) => {
+      const dst = destinations[idx % destinations.length];
+      if (src && dst && src !== dst) {
+        const flow = createPacketFlow(src, dst, activeLinks);
+        if (flow) newFlows.push(flow);
+      }
+    });
+    if (newFlows.length === 0 && sources[0] && destinations[0]) {
+      const flow = createPacketFlow(sources[0], destinations[0], activeLinks);
+      if (flow) newFlows.push(flow);
+    }
+    packetFlowsRef.current = newFlows;
+    setPacketFlows(newFlows);
   };
 
   const getNetworkStats = () => ({
@@ -463,9 +486,11 @@ export function useLiveNetworkDataWithCustom() {
     rerouteEvents,
     predictions,
     packetFlows,
-    selectedSource,
-    selectedDestination,
-    updateRoute,
+    selectedSources,
+    selectedDestinations,
+    sourceCount,
+    destinationCount,
+    updateMultiRoutes,
     getNetworkStats,
     hasCustomTopology,
     hasGeneratedTopology,
