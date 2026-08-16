@@ -107,10 +107,12 @@ function findPath(
     neighbors.forEach(({ link, neighbor }) => {
       if (avoidEdges.has(edgeKey(link.source, link.target))) return;
 
-      const statusPenalty = link.status === 'critical' ? 200 : link.status === 'warning' ? 8 : 0;
-      const forecastPenalty = predictionDriven && link.trafficLevel >= 55 ? 12 : 0;
-      const linkCost = 1 + link.trafficLevel / 24 + statusPenalty + forecastPenalty;
-      const nextCost = current.cost + linkCost;
+      const isIntermediate = neighbor !== destination && neighbor !== source;
+      const nodeTypeBonus = isIntermediate ? 0.3 : 0; // encourage routing through core switches and routers
+      const statusPenalty = link.status === 'critical' ? 300 : link.status === 'warning' ? 35 : 0;
+      const forecastPenalty = predictionDriven && link.trafficLevel >= 50 ? 40 : 0;
+      const linkCost = 1 + link.trafficLevel / 18 + statusPenalty + forecastPenalty - nodeTypeBonus;
+      const nextCost = current.cost + Math.max(0.1, linkCost);
 
       if (nextCost < (bestCost.get(neighbor) ?? Number.POSITIVE_INFINITY)) {
         bestCost.set(neighbor, nextCost);
