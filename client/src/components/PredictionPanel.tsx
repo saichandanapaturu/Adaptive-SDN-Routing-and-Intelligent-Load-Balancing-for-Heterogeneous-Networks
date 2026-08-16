@@ -42,7 +42,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
   const modelSubtext = 'v3 · 12k samples';
   const accuracyPct = '93.1%';
   const accuracyChange = '+1.4 this run';
-  const leadTime = '1.0s'; // matches real 1s live polling interval
+  const leadTime = '2.0s';
 
   // Congested links prediction
   const congestedLinksList = links
