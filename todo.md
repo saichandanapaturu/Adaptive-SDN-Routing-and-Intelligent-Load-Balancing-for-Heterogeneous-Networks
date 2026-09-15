@@ -10795,3 +10795,10 @@ The dashboard now presents a dark fixed sidebar at desktop widths with the AIFE 
 - [ ] Add a distinct sidebar icon and route the generated network into a separate generated-topology mode.
 - [ ] Verify counts, topology rendering, live packets, telemetry panels, and existing Custom Topology behavior.
 - [ ] Publish the feature.
+
+## Isolated Dynamic Traffic Surge Simulator
+
+- [ ] Add stochastic scenario control without changing existing topology, packet, routing, or prediction flows.
+- [ ] Add NORMAL, MODERATE, PEAK, SUDDEN SURGE, FLASH CROWD, and RECOVERY states.
+- [ ] Add live intensity, trend, affected-link, congestion-probability, path-cost, and reroute panels.
+- [ ] Verify existing dashboard features remain unchanged.
