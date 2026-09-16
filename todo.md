@@ -10802,3 +10802,11 @@ The dashboard now presents a dark fixed sidebar at desktop widths with the AIFE 
 - [ ] Add NORMAL, MODERATE, PEAK, SUDDEN SURGE, FLASH CROWD, and RECOVERY states.
 - [ ] Add live intensity, trend, affected-link, congestion-probability, path-cost, and reroute panels.
 - [ ] Verify existing dashboard features remain unchanged.
+
+## Pasted content 4 dashboard feature
+
+- [ ] Read pasted_content_4.txt and extract the requested feature requirements.
+- [ ] Choose an isolated integration point that preserves the existing Nexus dashboard.
+- [ ] Implement the requested feature additively.
+- [ ] Verify current topology, packet, routing, prediction, and traffic-simulator features remain intact.
+- [ ] Publish the additive feature.

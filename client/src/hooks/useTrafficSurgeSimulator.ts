@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NetworkLink, NetworkNode } from '@/hooks/useLiveNetworkData';
 
 type Scenario = 'normal' | 'morning' | 'evening' | 'random' | 'flash' | 'dynamic';
-export type TrafficState = 'NORMAL' | 'MODERATE' | 'PEAK' | 'SUDDEN SURGE' | 'FLASH CROWD' | 'RECOVERY';
+export type TrafficState = 'NORMAL' | 'MODERATE' | 'RAMPING_UP' | 'PEAK' | 'SUDDEN SURGE' | 'FLASH CROWD' | 'RANDOM_SURGE' | 'RAMPING_DOWN' | 'RECOVERY';
 export type SimulationSpeed = 1 | 2 | 5;
 
 export interface SurgeHistoryPoint {
@@ -27,6 +27,14 @@ export interface SurgeRouting {
   action: 'MONITOR' | 'PREPARE REROUTE' | 'REROUTE' | 'RECOVER';
 }
 
+export interface TrafficEventInfo {
+  name: string;
+  scheduledMinute?: number;
+  detectedMinute?: number;
+  durationMinutes?: number;
+  impact: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
 export interface TrafficSurgeState {
   scenario: Scenario;
   running: boolean;
@@ -43,6 +51,10 @@ export interface TrafficSurgeState {
   congestionProbability: number;
   trend: 'STABLE' | 'INCREASING' | 'RAPIDLY INCREASING' | 'DECREASING';
   runId: number;
+  simulatedMinute: number;
+  simulatedTime: string;
+  currentEvent?: TrafficEventInfo;
+  nextScheduledEvent: TrafficEventInfo & { timeUntilMinutes: number };
 }
 
 const SCENARIOS: Array<{ value: Scenario; label: string }> = [
@@ -57,6 +69,23 @@ const SCENARIOS: Array<{ value: Scenario; label: string }> = [
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 const edgeKey = (source: string, target: string) => [source, target].sort().join('::');
 const formatClock = (date: Date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+const formatSimulatedTime = (minute: number) => {
+  const normalized = ((minute % 1440) + 1440) % 1440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
+};
+const minutesUntil = (from: number, to: number) => (to - from + 1440) % 1440;
+const baselineForMinute = (minute: number) => {
+  const hour = ((minute % 1440) + 1440) % 1440 / 60;
+  if (hour < 6) return 18;
+  if (hour < 9) return 26 + ((hour - 6) / 3) * 18;
+  if (hour < 12) return 48;
+  if (hour < 14) return 42 + Math.sin((hour - 12) * Math.PI) * 10;
+  if (hour < 17) return 44;
+  if (hour < 18) return 44 + ((hour - 17) * 20);
+  if (hour < 20) return 76 - ((hour - 18) * 8);
+  if (hour < 23) return 50 - ((hour - 20) * 7);
+  return 28;
+};
 
 function seededRandom(seed: number) {
   let value = seed >>> 0;
@@ -115,10 +144,14 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
   const [congestionProbability, setCongestionProbability] = useState(18);
   const [trend, setTrend] = useState<TrafficSurgeState['trend']>('STABLE');
   const [runId, setRunId] = useState(0);
+  const [simulatedMinute, setSimulatedMinute] = useState(17 * 60 + 30);
+  const [currentEvent, setCurrentEvent] = useState<TrafficEventInfo | undefined>(undefined);
   const elapsedRef = useRef(0);
   const randomRef = useRef<() => number>(seededRandom(Date.now()));
   const affectedIndexRef = useRef(0);
   const previousIntensityRef = useRef(28);
+  const randomEventMinuteRef = useRef<number | null>(null);
+  const randomEventDetectedRef = useRef(false);
 
   const addEvent = (message: string, tone: SurgeEvent['tone'] = 'neutral') => {
     setEvents(previous => [{ id: `${Date.now()}-${Math.random()}`, time: formatClock(new Date()), message, tone }, ...previous].slice(0, 12));
@@ -136,6 +169,10 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
     setEvents([]);
     setCongestionProbability(18);
     setTrend('STABLE');
+    setSimulatedMinute(17 * 60 + 30);
+    setCurrentEvent(undefined);
+    randomEventMinuteRef.current = null;
+    randomEventDetectedRef.current = false;
     setRouting(buildInitialRouting(nodes, links));
   };
 
@@ -154,6 +191,10 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
     setSurgeActive(false);
     setCongestionProbability(18);
     setTrend('STABLE');
+    setSimulatedMinute(17 * 60 + 30);
+    setCurrentEvent(undefined);
+    randomEventMinuteRef.current = 90 + Math.floor(random() * 1260);
+    randomEventDetectedRef.current = false;
     setRouting(buildInitialRouting(nodes, links));
     addEvent('Normal traffic baseline established.', 'neutral');
   };
@@ -170,6 +211,17 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
       elapsedRef.current += 1;
       const step = elapsedRef.current;
       const random = randomRef.current;
+      const nextMinute = (simulatedMinute + 15) % 1440;
+      const scheduledEventStart = 18 * 60;
+      const scheduledWindow = nextMinute >= scheduledEventStart - 15 && nextMinute <= scheduledEventStart + 45;
+      const randomEventMinute = randomEventMinuteRef.current ?? 720;
+      const randomWindow = nextMinute >= randomEventMinute && nextMinute <= randomEventMinute + 30;
+      if (randomWindow && !randomEventDetectedRef.current) {
+        randomEventDetectedRef.current = true;
+        setCurrentEvent({ name: 'Unexpected Traffic Surge', detectedMinute: randomEventMinute, durationMinutes: 30, impact: 'HIGH' });
+        addEvent(`Unexpected traffic surge detected at ${formatSimulatedTime(randomEventMinute)}.`, 'warning');
+      }
+      setSimulatedMinute(nextMinute);
       const duration = scenario === 'flash' ? 18 : scenario === 'normal' ? 22 : 28;
       const surgeStart = scenario === 'normal' ? duration + 1 : 3 + Math.floor(random() * 5);
       const surgeEnd = surgeStart + (scenario === 'flash' ? 4 : 8 + Math.floor(random() * 5));
@@ -198,6 +250,11 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
         if (step > duration) elapsedRef.current = 0;
       }
 
+      const dayBaseline = baselineForMinute(nextMinute);
+      const eventBoost = scheduledWindow ? 22 : randomWindow ? 28 : 0;
+      target = clamp(target * 0.58 + dayBaseline * 0.42 + eventBoost);
+      if (scheduledWindow && nextState === 'NORMAL') nextState = nextMinute < scheduledEventStart ? 'RAMPING_UP' : 'PEAK';
+      if (randomWindow) nextState = 'RANDOM_SURGE';
       const currentIntensity = intensity;
       const smoothing = scenario === 'flash' && nextState === 'FLASH CROWD' ? 0.72 : 0.32;
       const nextIntensity = clamp(currentIntensity + (target - currentIntensity) * smoothing + (random() - 0.5) * 4);
@@ -262,6 +319,15 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
     pause: () => setPaused(value => !value),
     reset,
     triggerSurge,
+    simulatedMinute,
+    simulatedTime: formatSimulatedTime(simulatedMinute),
+    currentEvent,
+    nextScheduledEvent: {
+      name: 'Major Ticket Release',
+      scheduledMinute: 18 * 60,
+      impact: 'HIGH',
+      timeUntilMinutes: minutesUntil(simulatedMinute, 18 * 60),
+    },
   } satisfies Omit<TrafficSurgeState, 'scenario'> & {
     scenario: Scenario;
     setScenario: typeof setScenario;

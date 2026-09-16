@@ -10,12 +10,19 @@ interface TrafficSurgeSimulatorProps {
 }
 
 const edgeKey = (source: string, target: string) => [source, target].sort().join('::');
+const formatSimulatedTime = (minute: number) => {
+  const normalized = ((minute % 1440) + 1440) % 1440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
+};
 const stateColor: Record<TrafficState, string> = {
   NORMAL: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10',
   MODERATE: 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10',
+  RAMPING_UP: 'text-sky-300 border-sky-500/30 bg-sky-500/10',
   PEAK: 'text-amber-300 border-amber-500/30 bg-amber-500/10',
   'SUDDEN SURGE': 'text-orange-300 border-orange-500/40 bg-orange-500/10',
   'FLASH CROWD': 'text-red-300 border-red-500/40 bg-red-500/10',
+  RANDOM_SURGE: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
+  RAMPING_DOWN: 'text-indigo-300 border-indigo-500/30 bg-indigo-500/10',
   RECOVERY: 'text-violet-300 border-violet-500/30 bg-violet-500/10',
 };
 
@@ -68,6 +75,23 @@ export function TrafficSurgeSimulator({ nodes, links }: TrafficSurgeSimulatorPro
         </CardContent>
       </Card>
 
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">
+        <Card className="glass rounded-2xl border-white/10 bg-slate-900/30 backdrop-blur-xl">
+          <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 font-mono text-sm uppercase tracking-wide"><TimerReset className="h-4 w-4 text-cyan-300" /> Traffic Timeline</CardTitle><CardDescription>Simulated 24-hour demand model with normal, ramp-up, peak, and recovery periods.</CardDescription></CardHeader>
+          <CardContent className="grid grid-cols-3 gap-3">
+            <MiniMetric label="Simulated Time" value={simulator.simulatedTime} />
+            <MiniMetric label="Traffic State" value={simulator.trafficState} />
+            <MiniMetric label="Traffic Demand" value={`${Math.round(simulator.intensity)}%`} />
+          </CardContent>
+        </Card>
+        <Card className="glass rounded-2xl border-white/10 bg-slate-900/30 backdrop-blur-xl">
+          <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 font-mono text-sm uppercase tracking-wide"><Zap className="h-4 w-4 text-amber-300" /> Event Information</CardTitle><CardDescription>Known event timing is visible; unexpected events appear only after detection.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            {simulator.currentEvent ? <div className="rounded-xl border border-orange-400/25 bg-orange-400/[0.06] p-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-xs font-semibold uppercase tracking-wider text-orange-200">{simulator.currentEvent.name}</span><span className="rounded border border-orange-400/30 px-2 py-1 font-mono text-[10px] text-orange-200">{simulator.currentEvent.impact} IMPACT</span></div><p className="mt-2 font-mono text-[11px] text-slate-400">Detected {formatSimulatedTime(simulator.currentEvent.detectedMinute ?? simulator.simulatedMinute)} · Duration {simulator.currentEvent.durationMinutes ?? 0} min</p></div> : <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.05] p-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-xs font-semibold uppercase tracking-wider text-cyan-200">Major Ticket Release</span><span className="rounded border border-cyan-400/30 px-2 py-1 font-mono text-[10px] text-cyan-200">{formatSimulatedTime(simulator.nextScheduledEvent.scheduledMinute)} SCHEDULED</span></div><p className="mt-2 font-mono text-[11px] text-slate-400">Time until event: {simulator.nextScheduledEvent.timeUntilMinutes} min · Expected impact: HIGH</p></div>}
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
         <Metric label="Traffic State" value={simulator.trafficState} className={stateColor[simulator.trafficState]} />
         <Metric label="Intensity" value={`${Math.round(simulator.intensity)}%`} className={simulator.intensity >= 75 ? 'text-orange-300 border-orange-500/30 bg-orange-500/10' : 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10'} />
@@ -85,7 +109,8 @@ export function TrafficSurgeSimulator({ nodes, links }: TrafficSurgeSimulatorPro
               {simulator.history.length > 1 ? <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-4 h-[calc(100%-2rem)] w-[calc(100%-2rem)] overflow-visible"><polyline fill="none" stroke="#67e8f9" strokeWidth="1.8" vectorEffect="non-scaling-stroke" points={simulator.history.map((point, index) => `${(index / Math.max(1, simulator.history.length - 1)) * 100},${92 - (point.intensity / maxHistory) * 78}`).join(' ')} /></svg> : <div className="absolute inset-0 flex items-center justify-center font-mono text-xs uppercase tracking-[0.14em] text-slate-600">Start a scenario to plot traffic</div>}
               <div className="absolute bottom-2 left-3 font-mono text-[9px] uppercase tracking-widest text-slate-600">time →</div><div className="absolute left-2 top-2 font-mono text-[9px] uppercase tracking-widest text-slate-600">intensity ↑</div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">{(['NORMAL', 'MODERATE', 'PEAK', 'SUDDEN SURGE', 'FLASH CROWD', 'RECOVERY'] as TrafficState[]).map(state => <span key={state} className={`rounded border px-2 py-1 font-mono text-[9px] uppercase tracking-wider ${stateColor[state]}`}>{state}</span>)}</div>
+            <div className="mt-3 flex flex-wrap gap-2">{(['NORMAL', 'MODERATE', 'RAMPING_UP', 'PEAK', 'SUDDEN SURGE', 'FLASH CROWD', 'RANDOM_SURGE', 'RAMPING_DOWN', 'RECOVERY'] as TrafficState[])
+.map(state => <span key={state} className={`rounded border px-2 py-1 font-mono text-[9px] uppercase tracking-wider ${stateColor[state]}`}>{state}</span>)}</div>
           </CardContent>
         </Card>
 
