@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from '@/components/ui/command';
-import { Activity, AlertTriangle, BarChart3, Boxes, BrainCircuit, CircleDot, GitBranch, Network, PanelLeft, ScrollText, Search, Waypoints, XCircle, Zap, type LucideIcon } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Boxes, BrainCircuit, CircleDot, GitBranch, Network, PanelLeft, Radar, ScrollText, Search, Waypoints, XCircle, Zap, type LucideIcon } from 'lucide-react';
 
 interface NavItem {
   id: string;
@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'prediction', label: 'Prediction', icon: BrainCircuit, isActive: ({ activeTab }) => activeTab === 'prediction' },
   { id: 'reroute', label: 'Reroute Log', icon: ScrollText, isActive: ({ activeTab }) => activeTab === 'reroute' },
   { id: 'generator', label: 'Network Generator', icon: Boxes, isActive: ({ activeTab, isUsingGenerated }) => activeTab === 'generator' || isUsingGenerated },
+  { id: 'surge', label: 'Traffic Simulator', icon: Radar, isActive: ({ activeTab }) => activeTab === 'surge' },
 ];
 
 interface TopologyMode {
