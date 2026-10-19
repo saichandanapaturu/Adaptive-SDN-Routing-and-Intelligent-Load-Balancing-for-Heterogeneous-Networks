@@ -18,10 +18,12 @@ from os_ken.ofproto import ofproto_v1_3
 
 try:
     from server.controller.statistics import OpenFlowStatisticsCollector
+    from server.controller.telemetry_api import TelemetryApiState, TelemetryService
 except ImportError:
     # Supports launching the file directly through osken-manager from its
     # controller directory, where that directory is placed on sys.path.
     from statistics import OpenFlowStatisticsCollector
+    from telemetry_api import TelemetryApiState, TelemetryService
 
 
 LOG = logging.getLogger("aife.osken_controller")
@@ -36,8 +38,19 @@ class AIFEController(app_manager.OSKenApp):
         super().__init__(*args, **kwargs)
         self.connected_switches: Dict[int, object] = {}
         self.statistics = OpenFlowStatisticsCollector()
+        self.telemetry_service = TelemetryService(
+            TelemetryApiState(self.statistics, self._switch_snapshot)
+        )
+        self.telemetry_service.start()
         self._stats_thread = hub.spawn(self._poll_port_statistics)
         LOG.info("AIFE OS-Ken controller initialized for OpenFlow 1.3")
+
+    def _switch_snapshot(self):
+        """Return API-safe connection metadata without exposing datapath objects."""
+        return [
+            {"dpid": dpid, "status": "connected"}
+            for dpid in sorted(self.connected_switches)
+        ]
 
     def _poll_port_statistics(self):
         """Request port counters from every connected switch once per second."""
