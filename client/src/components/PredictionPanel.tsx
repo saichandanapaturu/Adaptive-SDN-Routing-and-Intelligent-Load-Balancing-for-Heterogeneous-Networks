@@ -7,9 +7,11 @@ interface PredictionPanelProps {
   predictions: PredictionData[];
   links: NetworkLink[];
   rerouteEvents: RerouteEvent[];
+  dataMode?: 'real-telemetry' | 'illustrative';
 }
 
-export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, links, rerouteEvents }) => {
+export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, links, rerouteEvents, dataMode = 'illustrative' }) => {
+  const isRealTelemetryMode = dataMode === 'real-telemetry';
   const [utcTime, setUtcTime] = useState<string>('');
 
   useEffect(() => {
@@ -31,18 +33,18 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
   }, []);
 
   const latest = predictions[0] || {
-    predictedCongestion: 24,
-    predictedPacketLoss: 0.12,
+    predictedCongestion: 0,
+    predictedPacketLoss: 0,
     trend: 'stable',
     timestamp: new Date(),
   };
 
   // 1. Model metrics from real live network state
-  const modelName = 'RF-32 trees';
-  const modelSubtext = 'v3 · 12k samples';
-  const accuracyPct = '93.1%';
-  const accuracyChange = '+1.4 this run';
-  const leadTime = '2.0s';
+  const modelName = isRealTelemetryMode ? 'Not deployed' : 'Illustrative';
+  const modelSubtext = isRealTelemetryMode ? 'Random Forest pending' : 'Synthetic dashboard mode';
+  const accuracyPct = isRealTelemetryMode ? '—' : 'N/A';
+  const accuracyChange = isRealTelemetryMode ? 'awaiting model' : 'not a trained model';
+  const leadTime = isRealTelemetryMode ? '—' : 'N/A';
 
   // Congested links prediction
   const congestedLinksList = links
@@ -57,12 +59,12 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
   const recentReroutesCount = rerouteEvents.filter(
     e => Date.now() - new Date(e.timestamp).getTime() < 300000
   ).length;
-  const avoidedDrops = recentReroutesCount > 0 ? recentReroutesCount * 128 : 412;
+  const avoidedDrops = recentReroutesCount > 0 ? recentReroutesCount * 128 : 0;
 
   // 2. Chart historical data (-60s to NOW + 6s forecast)
   // Build 12 points for history (-60s to NOW) and 2 points for forecast (+6s)
   const chartPoints = predictions.slice(0, 12).reverse();
-  while (chartPoints.length < 12) {
+  while (!isRealTelemetryMode && chartPoints.length < 12) {
     chartPoints.unshift({
       timestamp: new Date(Date.now() - (12 - chartPoints.length) * 5000),
       predictedCongestion: Math.max(10, latest.predictedCongestion + (Math.random() - 0.5) * 15),
@@ -72,20 +74,20 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
   }
 
   const busiestLink = links.reduce((max, l) => (l.trafficLevel > (max?.trafficLevel ?? 0) ? l : max), links[0]);
-  const linkTraffic = busiestLink?.trafficLevel ?? 32;
-  const linkBandwidth = busiestLink?.bandwidth ?? 10;
+  const linkTraffic = busiestLink?.trafficLevel ?? 0;
+  const linkBandwidth = busiestLink?.bandwidth ?? 0;
 
   // Feature stream values derived from busiest link live telemetry
-  const bandwidthUsagePct = Math.min(100, Math.round((linkTraffic / 100) * 88));
-  const queueSizePkts = Math.round(linkTraffic * 3.4);
-  const linkDelayMs = Math.round(12 + (linkTraffic / 100) * 35);
-  const packetLossPct = Math.min(5, Number((linkTraffic > 70 ? (linkTraffic - 70) * 0.08 : 0.05).toFixed(2)));
-  const switchCpuPct = Math.min(95, Math.round(28 + (linkTraffic / 100) * 54));
+  const bandwidthUsagePct = isRealTelemetryMode ? null : Math.min(100, Math.round((linkTraffic / 100) * 88));
+  const queueSizePkts = isRealTelemetryMode ? null : Math.round(linkTraffic * 3.4);
+  const linkDelayMs = isRealTelemetryMode ? null : Math.round(12 + (linkTraffic / 100) * 35);
+  const packetLossPct = isRealTelemetryMode ? null : Math.min(5, Number((linkTraffic > 70 ? (linkTraffic - 70) * 0.08 : 0.05).toFixed(2)));
+  const switchCpuPct = isRealTelemetryMode ? null : Math.min(95, Math.round(28 + (linkTraffic / 100) * 54));
 
   // Pre-emptive reroute top target
-  const topCongested = congestedLinksList[0] || busiestLink || { source: 'Switch-2', target: 'Switch-3', trafficLevel: 72 };
-  const altPathStr = `${topCongested.source} → Router-Core → ${topCongested.target}`;
-  const confidenceStr = `${Math.min(96, Math.round(82 + (topCongested.trafficLevel / 100) * 14))}%`;
+  const topCongested = congestedLinksList[0] || busiestLink;
+  const altPathStr = topCongested ? `${topCongested.source} → Router-Core → ${topCongested.target}` : 'Unavailable';
+  const confidenceStr = topCongested ? `${Math.min(96, Math.round(82 + (topCongested.trafficLevel / 100) * 14))}%` : '—';
 
   // The chart is intentionally derived from the rolling prediction history and
   // the current live link telemetry so it changes as the network changes.
@@ -101,7 +103,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
   const predictedHistoryPath = chartPoints
     .map((point, index) => `${index === 0 ? 'M' : 'L'} ${chartX(index, chartPoints.length).toFixed(2)},${chartY(point.predictedCongestion).toFixed(2)}`)
     .join(' ');
-  const forecastLift = latest.trend === 'increasing' ? 10 : latest.trend === 'decreasing' ? -7 : 3;
+  const forecastLift = isRealTelemetryMode ? 0 : latest.trend === 'increasing' ? 10 : latest.trend === 'decreasing' ? -7 : 3;
   const forecastMid = Math.max(0, Math.min(100, latest.predictedCongestion + forecastLift * 0.55));
   const forecastEnd = Math.max(0, Math.min(100, latest.predictedCongestion + forecastLift));
   const forecastPath = `M 80,${chartY(latest.predictedCongestion).toFixed(2)} Q 90,${chartY(forecastMid).toFixed(2)} 100,${chartY(forecastEnd).toFixed(2)}`;
@@ -157,7 +159,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
             <div className="text-xs text-slate-400 uppercase tracking-wider font-sans mb-1">ACCURACY</div>
             <div className="text-2xl font-semibold text-emerald-400">{accuracyPct}</div>
             <div className="w-full bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
-              <div className="bg-emerald-500 h-full" style={{ width: accuracyPct }} />
+              <div className="bg-emerald-500 h-full" style={{ width: isRealTelemetryMode ? '0%' : '0%' }} />
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
@@ -284,40 +286,15 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
                   <line x1="8" x2="8" y1="20" y2="90" stroke="#475569" strokeWidth="0.7" vectorEffect="non-scaling-stroke" />
                   <line x1="8" x2="100" y1="90" y2="90" stroke="#475569" strokeWidth="0.7" vectorEffect="non-scaling-stroke" />
 
-                  <path d={observedFillPath} fill="url(#observedGrad)" />
-                  <path
-                    d={observedPath}
-                    fill="none"
-                    stroke="#67e8f9"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <path
-                    d={predictedHistoryPath}
-                    fill="none"
-                    stroke="#fbbf24"
-                    strokeWidth="2.1"
-                    strokeDasharray="5 4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <path
-                    d={forecastPath}
-                    fill="none"
-                    stroke="#fde68a"
-                    strokeWidth="2.3"
-                    strokeDasharray="5 4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-
-                  <circle cx={observedLastX} cy={observedLastY} r="3.2" fill="#67e8f9" stroke="#082f49" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                  <circle cx={observedLastX} cy={predictedLastY} r="3" fill="#fbbf24" stroke="#451a03" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                  <line x1={observedLastX} x2={observedLastX} y1={observedLastY} y2={predictedLastY} stroke="#e2e8f0" strokeWidth="0.8" strokeDasharray="1.5 1.5" vectorEffect="non-scaling-stroke" opacity="0.65" />
+                  {!isRealTelemetryMode && <>
+                    <path d={observedFillPath} fill="url(#observedGrad)" />
+                    <path d={observedPath} fill="none" stroke="#67e8f9" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                    <path d={predictedHistoryPath} fill="none" stroke="#fbbf24" strokeWidth="2.1" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                    <path d={forecastPath} fill="none" stroke="#fde68a" strokeWidth="2.3" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                    <circle cx={observedLastX} cy={observedLastY} r="3.2" fill="#67e8f9" stroke="#082f49" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                    <circle cx={observedLastX} cy={predictedLastY} r="3" fill="#fbbf24" stroke="#451a03" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                    <line x1={observedLastX} x2={observedLastX} y1={observedLastY} y2={predictedLastY} stroke="#e2e8f0" strokeWidth="0.8" strokeDasharray="1.5 1.5" vectorEffect="non-scaling-stroke" opacity="0.65" />
+                  </>}
                 </svg>
               </div>
 
@@ -352,7 +329,9 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               </h3>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed mb-4">
-              Model predicts link <strong className="text-amber-300">{topCongested.source} → {topCongested.target}</strong> will exceed utilization threshold ({topCongested.trafficLevel.toFixed(0)}% traffic). Pre-emptively shifting flow to alternate path <strong className="text-cyan-300">{altPathStr}</strong> to prevent packet drop.
+              {isRealTelemetryMode
+                ? 'Random Forest prediction and controller rerouting are not deployed. This panel will populate after those backend stages are implemented.'
+                : <>Model predicts link <strong className="text-amber-300">{topCongested?.source} → {topCongested?.target}</strong> will exceed utilization threshold ({topCongested?.trafficLevel.toFixed(0)}% traffic). Pre-emptively shifting flow to alternate path <strong className="text-cyan-300">{altPathStr}</strong> to prevent packet drop.</>}
             </p>
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-800">
               <div>
@@ -383,10 +362,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">bandwidth usage</span>
-                  <span className="font-semibold text-cyan-400">{bandwidthUsagePct}%</span>
+                  <span className="font-semibold text-cyan-400">{bandwidthUsagePct === null ? '—' : `${bandwidthUsagePct}%`}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${bandwidthUsagePct}%` }} />
+                  <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${bandwidthUsagePct ?? 0}%` }} />
                 </div>
               </div>
 
@@ -394,10 +373,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">queue size</span>
-                  <span className="font-semibold text-amber-400">{queueSizePkts} pkts</span>
+                  <span className="font-semibold text-amber-400">{queueSizePkts === null ? '—' : `${queueSizePkts} pkts`}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-amber-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, (queueSizePkts / 200) * 100)}%` }} />
+                  <div className="bg-amber-500 h-full transition-all duration-500" style={{ width: `${queueSizePkts === null ? 0 : Math.min(100, (queueSizePkts / 200) * 100)}%` }} />
                 </div>
               </div>
 
@@ -405,10 +384,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">link delay</span>
-                  <span className="font-semibold text-emerald-400">{linkDelayMs} ms</span>
+                  <span className="font-semibold text-emerald-400">{linkDelayMs === null ? '—' : `${linkDelayMs} ms`}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, (linkDelayMs / 80) * 100)}%` }} />
+                  <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${linkDelayMs === null ? 0 : Math.min(100, (linkDelayMs / 80) * 100)}%` }} />
                 </div>
               </div>
 
@@ -416,10 +395,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">packet loss</span>
-                  <span className="font-semibold text-emerald-400">{packetLossPct}%</span>
+                  <span className="font-semibold text-emerald-400">{packetLossPct === null ? '—' : `${packetLossPct}%`}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, packetLossPct * 20)}%` }} />
+                  <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${packetLossPct === null ? 0 : Math.min(100, packetLossPct * 20)}%` }} />
                 </div>
               </div>
 
@@ -427,10 +406,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-slate-400">switch CPU</span>
-                  <span className="font-semibold text-cyan-400">{switchCpuPct}%</span>
+                  <span className="font-semibold text-cyan-400">{switchCpuPct === null ? '—' : `${switchCpuPct}%`}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${switchCpuPct}%` }} />
+                  <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${switchCpuPct ?? 0}%` }} />
                 </div>
               </div>
             </div>

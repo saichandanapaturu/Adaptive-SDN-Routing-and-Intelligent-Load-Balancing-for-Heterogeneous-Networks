@@ -26,7 +26,7 @@ export interface PortStat {
   packetsRx: number;
   packetsTx: number;
   errors: number;
-  congestion: number; // 0-100
+  congestion: number; // NaN means unavailable until the ML layer exists
 }
 
 export interface RerouteEvent {

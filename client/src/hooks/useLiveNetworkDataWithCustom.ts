@@ -9,6 +9,9 @@ import {
   PredictionData,
   PacketFlow,
 } from './useLiveNetworkData';
+import { fetchTelemetrySnapshot, TelemetryDataStatus, TelemetrySwitch } from '@/lib/telemetryApi';
+
+export type DashboardTelemetryStatus = TelemetryDataStatus | 'connecting' | 'awaiting-statistics';
 
 const DEFAULT_NODES: NetworkNode[] = [
   { id: 'switch-1', label: 'Switch-1', type: 'switch', status: 'healthy', x: 100, y: 100, trafficLevel: 0 },
@@ -55,6 +58,28 @@ const DEFAULT_LINKS: NetworkLink[] = [
 ];
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
+
+function openFlowPortStatsToDashboard(stats: import('@/lib/telemetryApi').TelemetryPort[]): PortStat[] {
+  return stats.map(stat => ({
+    node: `Switch-${stat.dpid}`,
+    port: stat.port_no,
+    rxRate: stat.rx_byte_rate / (1024 * 1024),
+    txRate: stat.tx_byte_rate / (1024 * 1024),
+    packetsRx: stat.rx_packets,
+    packetsTx: stat.tx_packets,
+    errors: stat.rx_errors + stat.tx_errors,
+    // The OpenFlow collector does not classify congestion. NaN keeps the
+    // existing table contract without presenting a fabricated percentage.
+    congestion: Number.NaN,
+  }));
+}
+
+function switchStatusForTelemetry(node: NetworkNode, switches: TelemetrySwitch[]): NetworkNode {
+  if (node.type !== 'switch') return node;
+  const switchNumber = Number(node.id.replace('switch-', ''));
+  const connected = switches.some(item => item.dpid === switchNumber && item.status === 'connected');
+  return { ...node, status: connected ? 'healthy' : 'warning', trafficLevel: 0 };
+}
 
 function statusForTraffic(trafficLevel: number): NetworkNode['status'] {
   if (trafficLevel >= 86) return 'critical';
@@ -302,6 +327,9 @@ export function useLiveNetworkDataWithCustom() {
   const [destinationCount, setDestinationCount] = useState<number>(0);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [selectedDestinations, setSelectedDestinations] = useState<string[]>([]);
+  const [telemetryStatus, setTelemetryStatus] = useState<DashboardTelemetryStatus>('connecting');
+  const [connectedSwitches, setConnectedSwitches] = useState<TelemetrySwitch[]>([]);
+  const [lastTelemetryUpdate, setLastTelemetryUpdate] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const nodesRef = useRef(nodes);
   const linksRef = useRef(links);
@@ -318,11 +346,15 @@ export function useLiveNetworkDataWithCustom() {
   }, [links]);
 
   useEffect(() => {
-    setNodes(activeNodes.map(node => ({ ...node, trafficLevel: 0, status: 'healthy' })));
+    setNodes(activeNodes.map(node => ({
+      ...node,
+      trafficLevel: 0,
+      status: activeMode === 'default' && node.type === 'switch' ? 'warning' : 'healthy',
+    })));
     setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0, status: 'healthy' })));
-    setPortStats(buildPortStats(activeNodes, activeLinks));
+    setPortStats(activeMode === 'default' ? [] : buildPortStats(activeNodes, activeLinks));
     setRerouteEvents([]);
-    const resetPredictions = [buildPrediction(activeLinks)];
+    const resetPredictions = activeMode === 'default' ? [] : [buildPrediction(activeLinks)];
     predictionsRef.current = resetPredictions;
     setPredictions(resetPredictions);
     packetFlowsRef.current = [];
@@ -331,11 +363,57 @@ export function useLiveNetworkDataWithCustom() {
     setSelectedDestinations([]);
     setSourceCount(0);
     setDestinationCount(0);
+    setTelemetryStatus(activeMode === 'default' ? 'connecting' : 'unavailable');
+    setConnectedSwitches([]);
+    setLastTelemetryUpdate(null);
     tickRef.current = 0;
     setTick(0);
   }, [topologyKey, activeLinks, activeNodes]);
 
   useEffect(() => {
+    if (activeMode !== 'default') return;
+    let cancelled = false;
+    let inFlight = false;
+
+    const poll = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const snapshot = await fetchTelemetrySnapshot();
+        if (cancelled) return;
+        setConnectedSwitches(snapshot.switches);
+        setTelemetryStatus(
+          snapshot.health.statistics_received
+            ? snapshot.health.data_status
+            : snapshot.health.controller_connected
+              ? 'awaiting-statistics'
+              : 'unavailable',
+        );
+        setLastTelemetryUpdate(snapshot.summary?.last_statistics_update ?? null);
+        setPortStats(openFlowPortStatsToDashboard(snapshot.ports));
+        setNodes(previous => previous.map(node => switchStatusForTelemetry(node, snapshot.switches)));
+      } catch {
+        if (!cancelled) {
+          setTelemetryStatus('unavailable');
+          setConnectedSwitches([]);
+          setLastTelemetryUpdate(null);
+          setPortStats([]);
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void poll();
+    const interval = window.setInterval(() => { void poll(); }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeMode]);
+
+  useEffect(() => {
+    if (activeMode === 'default') return;
     const interval = window.setInterval(() => {
       const currentNodes = nodesRef.current;
       const currentLinks = linksRef.current;
@@ -433,13 +511,19 @@ export function useLiveNetworkDataWithCustom() {
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [selectedDestinations, selectedSources, topologyKey]);
+  }, [activeMode, selectedDestinations, selectedSources, topologyKey]);
 
   const updateMultiRoutes = (sources: string[], destinations: string[]) => {
     setSelectedSources(sources);
     setSelectedDestinations(destinations);
     setSourceCount(sources.length);
     setDestinationCount(destinations.length);
+
+    if (activeMode === 'default') {
+      packetFlowsRef.current = [];
+      setPacketFlows([]);
+      return;
+    }
 
     const newFlows: PacketFlow[] = [];
     sources.forEach((src) => {
@@ -461,11 +545,11 @@ export function useLiveNetworkDataWithCustom() {
   const getNetworkStats = () => ({
     totalNodes: nodes.length,
     activeLinks: countPacketActiveLinks(links, packetFlows),
-    congestedLinks: links.filter(link => link.status === 'warning' || link.status === 'critical').length,
-    failedLinks: links.filter(link => link.status === 'critical').length,
+    congestedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'warning' || link.status === 'critical').length,
+    failedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'critical').length,
     maxTraffic: Math.max(...links.map(link => link.trafficLevel), 0),
     avgTraffic: links.length > 0 ? links.reduce((sum, link) => sum + link.trafficLevel, 0) / links.length : 0,
-    activeNodes: nodes.filter(node => node.status === 'healthy').length,
+    activeNodes: activeMode === 'default' ? connectedSwitches.length : nodes.filter(node => node.status === 'healthy').length,
   });
 
   return {
@@ -485,5 +569,8 @@ export function useLiveNetworkDataWithCustom() {
     hasGeneratedTopology,
     activeMode,
     telemetryTick: tick,
+    telemetryStatus,
+    connectedSwitches,
+    lastTelemetryUpdate,
   };
 }

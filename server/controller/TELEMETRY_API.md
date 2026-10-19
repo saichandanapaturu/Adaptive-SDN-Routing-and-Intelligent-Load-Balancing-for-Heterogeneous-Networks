@@ -13,6 +13,35 @@ The telemetry API is served by the same Python process as the OS-Ken controller.
 
 The Express server continues to serve the existing dashboard separately. The dashboard is not connected to this API in this step.
 
+## Start the integrated dashboard
+
+The default React adapter polls `http://127.0.0.1:8765` every two seconds when
+the default dashboard topology is active. To point it at another internal
+telemetry address during development, set the Vite variable before starting
+the dashboard:
+
+```bash
+VITE_AIFE_TELEMETRY_API_URL=http://127.0.0.1:8765 pnpm run dev
+```
+
+Run the dashboard in a separate terminal after starting the controller:
+
+```bash
+pnpm run dev
+```
+
+The frontend shows `Connecting to API`, `Awaiting statistics`, `OpenFlow live`,
+`OpenFlow stale`, or `Backend unavailable` in the existing header status area.
+It uses real OpenFlow port counters for the Port Statistics table when samples
+exist. Because the API does not yet provide a verified port-to-link mapping,
+the topology link traffic values and link summary remain unpopulated in
+default mode rather than being inferred from port numbers.
+
+The Prediction and Reroute panels remain in the existing layout, but default
+real-telemetry mode does not claim Random Forest predictions or controller
+reroutes. Custom and generated topology modes retain their existing
+illustrative behavior and are labeled as configured topology visualizations.
+
 ## Start
 
 From the project root on Ubuntu/WSL, after installing OS-Ken, Mininet, and Open vSwitch:

@@ -60,6 +60,9 @@ export default function Home() {
     hasGeneratedTopology,
     activeMode,
     telemetryTick,
+    telemetryStatus,
+    connectedSwitches,
+    lastTelemetryUpdate,
   } = useLiveNetworkDataWithCustom();
 
   const { isUsingCustom, isUsingGenerated, setIsUsingCustom } = useTopologyContext();
@@ -73,6 +76,28 @@ export default function Home() {
   const maxPairs = useMemo(() => Math.max(1, Math.floor(hostNodes.length / 2)), [hostNodes]);
 
   const requiredDestCount = useMemo(() => Math.max(1, Math.floor(hostNodes.length / 2)), [hostNodes]);
+
+  const telemetryLabel = activeMode !== 'default'
+    ? 'Configured topology'
+    : telemetryStatus === 'connecting'
+      ? 'Connecting to API'
+      : telemetryStatus === 'awaiting-statistics'
+        ? 'Awaiting statistics'
+    : telemetryStatus === 'fresh'
+      ? `OpenFlow live · ${connectedSwitches.length} switches`
+      : telemetryStatus === 'stale'
+        ? 'OpenFlow stale'
+        : 'Backend unavailable';
+
+  const telemetryColor = activeMode !== 'default'
+    ? 'bg-cyan-400'
+    : telemetryStatus === 'connecting' || telemetryStatus === 'awaiting-statistics'
+      ? 'bg-amber-400'
+    : telemetryStatus === 'fresh'
+      ? 'bg-emerald-400'
+      : telemetryStatus === 'stale'
+        ? 'bg-amber-400'
+        : 'bg-red-400';
 
   const handleSourceSelectChange = (nodeId: string) => {
     const nextSources = Array.from(new Set([...selectedSources, nodeId]));
@@ -270,10 +295,10 @@ export default function Home() {
                 <kbd className="ml-1 rounded-md border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">⌘K</kbd>
               </button>
               <div className="flex items-center gap-2 text-right">
-                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.75)]" aria-hidden="true" />
+                <span className={`h-2.5 w-2.5 rounded-full ${telemetryColor} ${telemetryStatus === 'fresh' ? 'animate-pulse' : ''}`} aria-hidden="true" />
                 <div>
-                  <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">Live</p>
-                  <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Telemetry</p>
+                  <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">{activeMode === 'default' && telemetryStatus !== 'fresh' ? 'Status' : 'Live'}</p>
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500" title={lastTelemetryUpdate ? `Last update ${lastTelemetryUpdate}` : undefined}>{telemetryLabel}</p>
                 </div>
               </div>
             </div>
@@ -361,10 +386,10 @@ export default function Home() {
                       </CardTitle>
                       <CardDescription>
                         {activeMode === 'generated'
-                          ? 'Live telemetry is driven by the network generated from your device counts.'
+                          ? 'Configured topology visualization; OpenFlow mapping is not verified for generated nodes.'
                           : hasCustomTopology
-                            ? 'Dashboard telemetry is driven by your saved custom nodes and links.'
-                            : 'Real-time network visualization with packet flow'}
+                            ? 'Configured custom topology; OpenFlow mapping is not verified for custom nodes.'
+                            : 'OpenFlow port telemetry when the OS-Ken controller is connected; physical link mapping is pending.'}
                       </CardDescription>
                     </div>
                     <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
@@ -533,7 +558,7 @@ export default function Home() {
 
           {/* Prediction Tab */}
           <TabsContent value="prediction" className="mt-0 min-w-0 flex-1">
-            <PredictionPanel predictions={predictions} links={links} rerouteEvents={rerouteEvents} />
+            <PredictionPanel predictions={predictions} links={links} rerouteEvents={rerouteEvents} dataMode={activeMode === 'default' ? 'real-telemetry' : 'illustrative'} />
           </TabsContent>
 
           {/* Reroute Log Tab */}
