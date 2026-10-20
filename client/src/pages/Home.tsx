@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLiveNetworkDataWithCustom } from '@/hooks/useLiveNetworkDataWithCustom';
 import { useTopologyContext } from '@/contexts/TopologyContext';
+import { activePeakHourAt } from '@/lib/peakHours';
 import { ImprovedNetworkTopology } from '@/components/ImprovedNetworkTopology';
 import { CustomTopologyBuilder } from '@/components/CustomTopologyBuilder';
 import { NetworkGenerator } from '@/components/NetworkGenerator';
@@ -65,9 +66,17 @@ export default function Home() {
     lastTelemetryUpdate,
   } = useLiveNetworkDataWithCustom();
 
-  const { isUsingCustom, isUsingGenerated, setIsUsingCustom } = useTopologyContext();
+  const {
+    isUsingCustom,
+    isUsingGenerated,
+    setIsUsingCustom,
+    peakHours,
+    simulatedMinute,
+  } = useTopologyContext();
 
   const stats = getNetworkStats();
+  const activePeakHour = activePeakHourAt(peakHours, simulatedMinute);
+  const simulatedTime = `${String(Math.floor(simulatedMinute / 60) % 24).padStart(2, '0')}:${String(simulatedMinute % 60).padStart(2, '0')}`;
   const [activeTab, setActiveTab] = useState('monitor');
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
@@ -391,6 +400,14 @@ export default function Home() {
                             ? 'Configured custom topology; OpenFlow mapping is not verified for custom nodes.'
                             : 'OpenFlow port telemetry when the OS-Ken controller is connected; physical link mapping is pending.'}
                       </CardDescription>
+                      {activePeakHour && (
+                        <p role="status" className="mt-2 font-mono text-[11px] uppercase tracking-wider text-amber-200">
+                          Peak hour active: {activePeakHour.name} · {activePeakHour.startTime}–{activePeakHour.endTime} · {activePeakHour.intensity}% at {simulatedTime}
+                          {activeMode === 'default'
+                            ? ' · scheduled simulation only; real telemetry unchanged'
+                            : ' · simulated load applied'}
+                        </p>
+                      )}
                     </div>
                     <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                       {activeMode === 'generated' ? `GENERATED LIVE · TICK ${telemetryTick}` : hasCustomTopology ? `CUSTOM LIVE · TICK ${telemetryTick}` : 'DEFAULT LIVE'}
@@ -547,7 +564,7 @@ export default function Home() {
           </TabsContent>
 
           {/* Dynamic Traffic Surge Simulator Tab */}
-          <TabsContent value="surge" className="mt-0 min-w-0 flex-1">
+          <TabsContent value="surge" forceMount className="data-[state=inactive]:hidden mt-0 min-w-0 flex-1">
             <TrafficSurgeSimulator nodes={nodes} links={links} />
           </TabsContent>
 

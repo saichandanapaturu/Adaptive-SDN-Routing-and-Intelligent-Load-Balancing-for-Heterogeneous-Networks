@@ -1,17 +1,28 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { NetworkNode, NetworkLink } from '@/hooks/useLiveNetworkData';
+import {
+  DEFAULT_PEAK_HOURS,
+  PEAK_HOURS_STORAGE_KEY,
+  PeakHourPeriod,
+  parsePeakHourSchedule,
+  serializePeakHourSchedule,
+} from '@/lib/peakHours';
 
 interface TopologyContextType {
   customNodes: NetworkNode[];
   customLinks: NetworkLink[];
   generatedNodes: NetworkNode[];
   generatedLinks: NetworkLink[];
+  peakHours: PeakHourPeriod[];
+  simulatedMinute: number;
   isUsingCustom: boolean;
   isUsingGenerated: boolean;
   setCustomNodes: (nodes: NetworkNode[]) => void;
   setCustomLinks: (links: NetworkLink[]) => void;
   setGeneratedNodes: (nodes: NetworkNode[]) => void;
   setGeneratedLinks: (links: NetworkLink[]) => void;
+  setPeakHours: React.Dispatch<React.SetStateAction<PeakHourPeriod[]>>;
+  setSimulatedMinute: (minute: number) => void;
   setIsUsingCustom: (value: boolean) => void;
   setIsUsingGenerated: (value: boolean) => void;
   addCustomNode: (node: NetworkNode) => void;
@@ -31,6 +42,15 @@ const STORAGE_KEY_GENERATED_LINKS = 'nexus-generated-links';
 const STORAGE_KEY_GENERATED_MODE = 'nexus-using-generated';
 
 export function TopologyProvider({ children }: { children: ReactNode }) {
+  const [peakHours, setPeakHours] = useState<PeakHourPeriod[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PEAK_HOURS.map(period => ({ ...period }));
+    try {
+      return parsePeakHourSchedule(localStorage.getItem(PEAK_HOURS_STORAGE_KEY));
+    } catch {
+      return DEFAULT_PEAK_HOURS.map(period => ({ ...period }));
+    }
+  });
+  const [simulatedMinute, setSimulatedMinuteState] = useState(17 * 60 + 30);
   const [customNodes, setCustomNodesState] = useState<NetworkNode[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -130,6 +150,12 @@ export function TopologyProvider({ children }: { children: ReactNode }) {
     }
   }, [isUsingGenerated]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(PEAK_HOURS_STORAGE_KEY, serializePeakHourSchedule(peakHours));
+    }
+  }, [peakHours]);
+
   const setCustomNodes = (nodes: NetworkNode[]) => {
     setCustomNodesState(nodes);
   };
@@ -154,6 +180,10 @@ export function TopologyProvider({ children }: { children: ReactNode }) {
   const setIsUsingGenerated = (value: boolean) => {
     setIsUsingGeneratedState(value);
     if (value) setIsUsingCustomState(false);
+  };
+
+  const setSimulatedMinute = (minute: number) => {
+    setSimulatedMinuteState(((minute % 1440) + 1440) % 1440);
   };
 
   const addCustomNode = (node: NetworkNode) => {
@@ -185,12 +215,16 @@ export function TopologyProvider({ children }: { children: ReactNode }) {
         customLinks,
         generatedNodes,
         generatedLinks,
+        peakHours,
+        simulatedMinute,
         isUsingCustom,
         isUsingGenerated,
         setCustomNodes,
         setCustomLinks,
         setGeneratedNodes,
         setGeneratedLinks,
+        setPeakHours,
+        setSimulatedMinute,
         setIsUsingCustom,
         setIsUsingGenerated,
         addCustomNode,

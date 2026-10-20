@@ -10,6 +10,7 @@ import {
   PacketFlow,
 } from './useLiveNetworkData';
 import { fetchTelemetrySnapshot, TelemetryDataStatus, TelemetrySwitch } from '@/lib/telemetryApi';
+import { applyPeakHourSchedule } from '@/lib/peakHours';
 
 export type DashboardTelemetryStatus = TelemetryDataStatus | 'connecting' | 'awaiting-statistics';
 
@@ -292,8 +293,23 @@ function createPacketFlow(source: string, destination: string, links: NetworkLin
   };
 }
 
+export function packetFlowProgress(flow: PacketFlow, now: number): number {
+  return flow.duration > 0
+    ? clamp(((now - flow.startTime) / flow.duration) * 100)
+    : 100;
+}
+
 export function useLiveNetworkDataWithCustom() {
-  const { customNodes, customLinks, generatedNodes, generatedLinks, isUsingCustom, isUsingGenerated } = useTopologyContext();
+  const {
+    customNodes,
+    customLinks,
+    generatedNodes,
+    generatedLinks,
+    isUsingCustom,
+    isUsingGenerated,
+    peakHours,
+    simulatedMinute,
+  } = useTopologyContext();
   const hasCustomTopology = customNodes.length > 0;
   const hasGeneratedTopology = generatedNodes.length > 0;
   const activeMode = isUsingGenerated && hasGeneratedTopology ? 'generated' : isUsingCustom && hasCustomTopology ? 'custom' : 'default';
@@ -333,6 +349,9 @@ export function useLiveNetworkDataWithCustom() {
   const [tick, setTick] = useState(0);
   const nodesRef = useRef(nodes);
   const linksRef = useRef(links);
+  const baseLinksRef = useRef(activeLinks);
+  const peakHoursRef = useRef(peakHours);
+  const simulatedMinuteRef = useRef(simulatedMinute);
   const packetFlowsRef = useRef<PacketFlow[]>([]);
   const predictionsRef = useRef<PredictionData[]>([buildPrediction(activeLinks)]);
   const tickRef = useRef(0);
@@ -346,6 +365,12 @@ export function useLiveNetworkDataWithCustom() {
   }, [links]);
 
   useEffect(() => {
+    peakHoursRef.current = peakHours;
+    simulatedMinuteRef.current = simulatedMinute;
+  }, [peakHours, simulatedMinute]);
+
+  useEffect(() => {
+    baseLinksRef.current = activeLinks.map(link => ({ ...link, trafficLevel: 0, status: 'healthy' }));
     setNodes(activeNodes.map(node => ({
       ...node,
       trafficLevel: 0,
@@ -369,6 +394,28 @@ export function useLiveNetworkDataWithCustom() {
     tickRef.current = 0;
     setTick(0);
   }, [topologyKey, activeLinks, activeNodes]);
+
+  useEffect(() => {
+    if (activeMode === 'default') return;
+    const scheduledLinks = applyPeakHourSchedule(
+      baseLinksRef.current,
+      peakHoursRef.current,
+      simulatedMinuteRef.current,
+      true,
+    ).map(link => ({ ...link, status: statusForTraffic(link.trafficLevel) }));
+    linksRef.current = scheduledLinks;
+    setLinks(scheduledLinks);
+
+    const scheduledNodes = activeNodes.map(node => {
+      const incident = scheduledLinks.filter(link => link.source === node.id || link.target === node.id);
+      const trafficLevel = incident.length > 0
+        ? incident.reduce((sum, link) => sum + link.trafficLevel, 0) / incident.length
+        : 0;
+      return { ...node, trafficLevel, status: statusForTraffic(trafficLevel) };
+    });
+    nodesRef.current = scheduledNodes;
+    setNodes(scheduledNodes);
+  }, [activeMode, activeNodes, peakHours, simulatedMinute, topologyKey]);
 
   useEffect(() => {
     if (activeMode !== 'default') return;
@@ -413,19 +460,54 @@ export function useLiveNetworkDataWithCustom() {
   }, [activeMode]);
 
   useEffect(() => {
+    if (activeMode !== 'default') return;
+    const interval = window.setInterval(() => {
+      const now = Date.now();
+      const updated = packetFlowsRef.current
+        .map(flow => ({ ...flow, progress: packetFlowProgress(flow, now) }))
+        .filter(flow => flow.progress < 100);
+      const activePairs = new Set(updated.map(flow => `${flow.source}::${flow.destination}`));
+
+      selectedSources.forEach(source => {
+        selectedDestinations.forEach(destination => {
+          const pair = `${source}::${destination}`;
+          if (source === destination || activePairs.has(pair)) return;
+          const flow = createPacketFlow(source, destination, activeLinks);
+          if (flow) {
+            updated.push(flow);
+            activePairs.add(pair);
+          }
+        });
+      });
+
+      packetFlowsRef.current = updated;
+      setPacketFlows(updated);
+    }, 100);
+
+    return () => window.clearInterval(interval);
+  }, [activeMode, activeLinks, selectedDestinations, selectedSources, topologyKey]);
+
+  useEffect(() => {
     if (activeMode === 'default') return;
     const interval = window.setInterval(() => {
       const currentNodes = nodesRef.current;
-      const currentLinks = linksRef.current;
+      const currentLinks = baseLinksRef.current;
       const activeRouteEdges = new Set(packetFlowsRef.current.flatMap(flow => pathEdgeKeys(flow.path)));
       const forecastHotspot = tickRef.current % 8 >= 5;
-      const nextLinks = currentLinks.map(link => {
+      const nextBaseLinks = currentLinks.map(link => {
         const drift = (Math.random() - 0.5) * 18;
         const burst = Math.random() < 0.18 ? 24 : 0;
         const predictedRouteBurst = forecastHotspot && activeRouteEdges.has(edgeKey(link.source, link.target)) ? 84 : 0;
         const trafficLevel = clamp(link.trafficLevel * 0.58 + drift + burst + predictedRouteBurst);
         return { ...link, trafficLevel, status: statusForTraffic(trafficLevel) };
       });
+      baseLinksRef.current = nextBaseLinks;
+      const nextLinks = applyPeakHourSchedule(
+        nextBaseLinks,
+        peakHoursRef.current,
+        simulatedMinuteRef.current,
+        true,
+      ).map(link => ({ ...link, status: statusForTraffic(link.trafficLevel) }));
       const nextNodes = currentNodes.map(node => {
         const incident = nextLinks.filter(link => link.source === node.id || link.target === node.id);
         const trafficLevel = incident.length > 0
@@ -456,7 +538,7 @@ export function useLiveNetworkDataWithCustom() {
       const reroutes: RerouteEvent[] = [];
       const updated = packetFlowsRef.current
         .map(flow => {
-          const progress = clamp(((now - flow.startTime) / flow.duration) * 100);
+          const progress = packetFlowProgress(flow, now);
           if (progress >= 100) return null;
 
           const currentEdges = pathEdgeKeys(flow.path);
@@ -518,12 +600,6 @@ export function useLiveNetworkDataWithCustom() {
     setSelectedDestinations(destinations);
     setSourceCount(sources.length);
     setDestinationCount(destinations.length);
-
-    if (activeMode === 'default') {
-      packetFlowsRef.current = [];
-      setPacketFlows([]);
-      return;
-    }
 
     const newFlows: PacketFlow[] = [];
     sources.forEach((src) => {
