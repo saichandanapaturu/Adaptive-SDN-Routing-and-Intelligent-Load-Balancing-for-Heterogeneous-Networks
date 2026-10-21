@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { NetworkNode, NetworkLink, PacketFlow } from '@/hooks/useLiveNetworkData';
+import { canAnimatePacketFlow } from '@/lib/networkRouting';
 
 interface NetworkTopologyProps {
   nodes: NetworkNode[];
@@ -58,7 +59,7 @@ export const NetworkTopology: React.FC<NetworkTopologyProps> = ({
       // Link color based on status
       let linkColor = '#10b981'; // healthy - green
       if (link.status === 'warning') linkColor = '#f59e0b'; // amber
-      if (link.status === 'critical') linkColor = '#ef4444'; // red
+      if (link.status === 'critical' || link.status === 'failed') linkColor = '#ef4444'; // red
 
       // Draw link with gradient based on traffic
       const gradient = ctx.createLinearGradient(sourcePos.x, sourcePos.y, targetPos.x, targetPos.y);
@@ -130,6 +131,7 @@ export const NetworkTopology: React.FC<NetworkTopologyProps> = ({
 
     // Draw packet flows
     packetFlows.forEach(flow => {
+      if (!canAnimatePacketFlow(flow, links)) return;
       const path = flow.path;
       if (path.length < 2) return;
 

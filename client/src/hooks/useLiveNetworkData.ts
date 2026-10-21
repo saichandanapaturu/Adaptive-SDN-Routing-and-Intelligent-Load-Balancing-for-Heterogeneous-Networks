@@ -15,7 +15,7 @@ export interface NetworkLink {
   target: string;
   bandwidth: number; // MB/s
   trafficLevel: number; // 0-100
-  status: 'healthy' | 'warning' | 'critical';
+  status: 'healthy' | 'warning' | 'critical' | 'failed';
 }
 
 export interface PortStat {
@@ -54,6 +54,8 @@ export interface PacketFlow {
   progress: number; // 0-100
   startTime: number;
   duration: number;
+  status?: 'active' | 'blocked';
+  blockedReason?: string;
 }
 
 const NODES: NetworkNode[] = [
@@ -159,7 +161,7 @@ function findPath(source: string, destination: string): string[] {
     visited.add(node);
     
     const neighbors = LINKS
-      .filter(link => link.source === node || link.target === node)
+      .filter(link => link.status !== 'failed' && (link.source === node || link.target === node))
       .map(link => (link.source === node ? link.target : link.source));
     
     for (const neighbor of neighbors) {
@@ -234,6 +236,13 @@ export function useLiveNetworkData() {
             ...flow,
             progress: Math.min(100, ((now - flow.startTime) / flow.duration) * 100),
           }))
+          .filter(flow => !flow.path.some((node, index) => {
+            const next = flow.path[index + 1];
+            return next && LINKS.some(link =>
+              link.status === 'failed'
+              && ((link.source === node && link.target === next) || (link.source === next && link.target === node)),
+            );
+          }))
           .filter(flow => flow.progress < 100);
 
         // Add new packet flows occasionally
@@ -267,7 +276,7 @@ export function useLiveNetworkData() {
     totalNodes: nodes.length,
     activeLinks: links.filter(l => l.status === 'healthy').length,
     congestedLinks: links.filter(l => l.status === 'warning' || l.status === 'critical').length,
-    failedLinks: links.filter(l => l.status === 'critical').length,
+    failedLinks: links.filter(l => l.status === 'failed').length,
     maxTraffic: Math.max(...links.map(l => l.trafficLevel)),
     avgTraffic: links.reduce((sum, l) => sum + l.trafficLevel, 0) / links.length,
     activeNodes: nodes.filter(n => n.status === 'healthy').length,

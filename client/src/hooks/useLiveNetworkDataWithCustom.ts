@@ -1,5 +1,5 @@
 // Style: AIFE Live Operations — dense telemetry, dark canvas, emerald/cyan status accents, and motion that explains network state.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTopologyContext } from '@/contexts/TopologyContext';
 import {
   NetworkNode,
@@ -11,6 +11,16 @@ import {
 } from './useLiveNetworkData';
 import { fetchTelemetrySnapshot, TelemetryDataStatus, TelemetrySwitch } from '@/lib/telemetryApi';
 import { applyPeakHourSchedule } from '@/lib/peakHours';
+import {
+  findAvailablePath,
+  linkEndpointNames,
+  linkFailureTransitions,
+  networkEdgeKey as edgeKey,
+  pathContainsFailedLink,
+  reconcilePacketFlowForFailures,
+  snapshotLinkFailures,
+} from '@/lib/networkRouting';
+import { toast } from 'sonner';
 
 export type DashboardTelemetryStatus = TelemetryDataStatus | 'connecting' | 'awaiting-statistics';
 
@@ -88,12 +98,14 @@ function statusForTraffic(trafficLevel: number): NetworkNode['status'] {
   return 'healthy';
 }
 
-function portForNode(nodeId: string) {
-  return (Array.from(nodeId).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 48) + 1;
+function statusForLink(link: NetworkLink): NetworkLink {
+  return link.status === 'failed'
+    ? { ...link, trafficLevel: 0, status: 'failed' }
+    : { ...link, status: statusForTraffic(link.trafficLevel) };
 }
 
-function edgeKey(source: string, target: string) {
-  return source < target ? `${source}::${target}` : `${target}::${source}`;
+function portForNode(nodeId: string) {
+  return (Array.from(nodeId).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 48) + 1;
 }
 
 function pathEdgeKeys(path: string[]) {
@@ -104,55 +116,11 @@ function pathsEqual(first: string[], second: string[]) {
   return first.length === second.length && first.every((node, index) => node === second[index]);
 }
 
-function findPath(
-  source: string,
-  destination: string,
-  links: NetworkLink[],
-  avoidEdges: Set<string> = new Set(),
-  predictionDriven = false,
-): string[] {
-  if (!source || !destination || source === destination) return source === destination && source ? [source] : [];
-
-  const queue: Array<{ node: string; path: string[]; cost: number }> = [{ node: source, path: [source], cost: 0 }];
-  const bestCost = new Map<string, number>([[source, 0]]);
-
-  while (queue.length > 0) {
-    queue.sort((left, right) => left.cost - right.cost);
-    const current = queue.shift();
-    if (!current) break;
-
-    if (current.node === destination) return current.path;
-
-    const neighbors = links
-      .filter(link => link.source === current.node || link.target === current.node)
-      .map(link => ({
-        link,
-        neighbor: link.source === current.node ? link.target : link.source,
-      }));
-
-    neighbors.forEach(({ link, neighbor }) => {
-      if (avoidEdges.has(edgeKey(link.source, link.target))) return;
-
-      const isIntermediate = neighbor !== destination && neighbor !== source;
-      const nodeTypeBonus = isIntermediate ? 0.3 : 0; // encourage routing through core switches and routers
-      const statusPenalty = link.status === 'critical' ? 300 : link.status === 'warning' ? 35 : 0;
-      const forecastPenalty = predictionDriven && link.trafficLevel >= 50 ? 40 : 0;
-      const linkCost = 1 + link.trafficLevel / 18 + statusPenalty + forecastPenalty - nodeTypeBonus;
-      const nextCost = current.cost + Math.max(0.1, linkCost);
-
-      if (nextCost < (bestCost.get(neighbor) ?? Number.POSITIVE_INFINITY)) {
-        bestCost.set(neighbor, nextCost);
-        queue.push({ node: neighbor, path: [...current.path, neighbor], cost: nextCost });
-      }
-    });
-  }
-
-  return [];
-}
-
 function countPacketActiveLinks(links: NetworkLink[], packetFlows: PacketFlow[]) {
-  const packetEdges = new Set(packetFlows.flatMap(flow => pathEdgeKeys(flow.path)));
-  return links.filter(link => packetEdges.has(edgeKey(link.source, link.target))).length;
+  const packetEdges = new Set(packetFlows
+    .filter(flow => flow.status !== 'blocked')
+    .flatMap(flow => pathEdgeKeys(flow.path)));
+  return links.filter(link => link.status !== 'failed' && packetEdges.has(edgeKey(link.source, link.target))).length;
 }
 
 function rerouteEventForFlow(
@@ -180,7 +148,7 @@ function connectedPair(nodes: NetworkNode[], links: NetworkLink[]) {
     for (let destinationIndex = sourceIndex + 1; destinationIndex < nodes.length; destinationIndex += 1) {
       const source = nodes[sourceIndex];
       const destination = nodes[destinationIndex];
-      const path = findPath(source.id, destination.id, links);
+      const path = findAvailablePath(source.id, destination.id, links);
       if (path.length > 1) candidates.push({ source, destination, path });
     }
   }
@@ -277,10 +245,8 @@ function initialRoute(nodes: NetworkNode[], links: NetworkLink[]) {
   };
 }
 
-function createPacketFlow(source: string, destination: string, links: NetworkLink[]): PacketFlow | null {
-  const path = findPath(source, destination, links);
-  if (path.length < 2) return null;
-
+function createPacketFlow(source: string, destination: string, links: NetworkLink[]): PacketFlow {
+  const path = findAvailablePath(source, destination, links);
   const now = Date.now();
   return {
     id: `packet-${now}-${Math.random().toString(36).slice(2, 7)}`,
@@ -290,6 +256,8 @@ function createPacketFlow(source: string, destination: string, links: NetworkLin
     progress: 0,
     startTime: now,
     duration: 1800 + Math.random() * 900,
+    status: path.length > 1 ? 'active' : 'blocked',
+    blockedReason: path.length > 1 ? undefined : 'No available route.',
   };
 }
 
@@ -329,7 +297,7 @@ export function useLiveNetworkDataWithCustom() {
   );
 
   const topologyKey = useMemo(
-    () => `${activeMode}:${activeNodes.map(node => node.id).join('|')}:${activeLinks.map(link => `${link.source}-${link.target}`).join('|')}`,
+    () => `${activeMode}:${activeNodes.map(node => `${node.id}@${node.x},${node.y}`).join('|')}:${activeLinks.map(link => `${link.source}-${link.target}:${link.bandwidth}`).join('|')}`,
     [activeLinks, activeMode, activeNodes],
   );
 
@@ -355,6 +323,11 @@ export function useLiveNetworkDataWithCustom() {
   const packetFlowsRef = useRef<PacketFlow[]>([]);
   const predictionsRef = useRef<PredictionData[]>([buildPrediction(activeLinks)]);
   const tickRef = useRef(0);
+  const sourceLinkStatusesRef = useRef(new Map(activeLinks.map(link => [
+    edgeKey(link.source, link.target),
+    link.status,
+  ])));
+  const failureSnapshotRef = useRef(snapshotLinkFailures([]));
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -370,13 +343,13 @@ export function useLiveNetworkDataWithCustom() {
   }, [peakHours, simulatedMinute]);
 
   useEffect(() => {
-    baseLinksRef.current = activeLinks.map(link => ({ ...link, trafficLevel: 0, status: 'healthy' }));
+    baseLinksRef.current = activeLinks.map(link => ({ ...link, trafficLevel: 0 }));
     setNodes(activeNodes.map(node => ({
       ...node,
       trafficLevel: 0,
       status: activeMode === 'default' && node.type === 'switch' ? 'warning' : 'healthy',
     })));
-    setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0, status: 'healthy' })));
+    setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0 })));
     setPortStats(activeMode === 'default' ? [] : buildPortStats(activeNodes, activeLinks));
     setRerouteEvents([]);
     const resetPredictions = activeMode === 'default' ? [] : [buildPrediction(activeLinks)];
@@ -393,7 +366,54 @@ export function useLiveNetworkDataWithCustom() {
     setLastTelemetryUpdate(null);
     tickRef.current = 0;
     setTick(0);
-  }, [topologyKey, activeLinks, activeNodes]);
+  }, [topologyKey]);
+
+  useLayoutEffect(() => {
+    const nextStatuses = new Map(activeLinks.map(link => [
+      edgeKey(link.source, link.target),
+      link.status,
+    ]));
+    const changedStatuses = new Map<string, NetworkLink['status']>();
+    activeLinks.forEach(link => {
+      const key = edgeKey(link.source, link.target);
+      const previousStatus = sourceLinkStatusesRef.current.get(key);
+      if (previousStatus !== undefined && previousStatus !== link.status) {
+        changedStatuses.set(key, link.status);
+      }
+    });
+    sourceLinkStatusesRef.current = nextStatuses;
+
+    if (changedStatuses.size === 0) return;
+    baseLinksRef.current = baseLinksRef.current.map(link => {
+      const status = changedStatuses.get(edgeKey(link.source, link.target));
+      return status
+        ? { ...link, status, trafficLevel: status === 'failed' ? 0 : link.trafficLevel }
+        : link;
+    });
+    const updatedLinks = linksRef.current.map(link => {
+      const status = changedStatuses.get(edgeKey(link.source, link.target));
+      return status
+        ? { ...link, status, trafficLevel: status === 'failed' ? 0 : link.trafficLevel }
+        : link;
+    });
+    linksRef.current = updatedLinks;
+    setLinks(updatedLinks);
+  }, [activeLinks]);
+
+  useEffect(() => {
+    const transitions = linkFailureTransitions(failureSnapshotRef.current, links);
+    failureSnapshotRef.current = transitions.snapshot;
+    transitions.failed.forEach(link => {
+      toast.error('Link marked failed', {
+        description: `${linkEndpointNames(link, nodes)} is unavailable in the active topology.`,
+      });
+    });
+    transitions.restored.forEach(link => {
+      toast.success('Link restored', {
+        description: `${linkEndpointNames(link, nodes)} is available for simulated routing.`,
+      });
+    });
+  }, [links, nodes]);
 
   useEffect(() => {
     if (activeMode === 'default') return;
@@ -402,7 +422,7 @@ export function useLiveNetworkDataWithCustom() {
       peakHoursRef.current,
       simulatedMinuteRef.current,
       true,
-    ).map(link => ({ ...link, status: statusForTraffic(link.trafficLevel) }));
+    ).map(statusForLink);
     linksRef.current = scheduledLinks;
     setLinks(scheduledLinks);
 
@@ -464,19 +484,22 @@ export function useLiveNetworkDataWithCustom() {
     const interval = window.setInterval(() => {
       const now = Date.now();
       const updated = packetFlowsRef.current
-        .map(flow => ({ ...flow, progress: packetFlowProgress(flow, now) }))
-        .filter(flow => flow.progress < 100);
+        .map(flow => {
+          const reconciled = reconcilePacketFlowForFailures(flow, linksRef.current, now);
+          return reconciled.status === 'blocked'
+            ? reconciled
+            : { ...reconciled, progress: packetFlowProgress(reconciled, now) };
+        })
+        .filter(flow => flow.status === 'blocked' || flow.progress < 100);
       const activePairs = new Set(updated.map(flow => `${flow.source}::${flow.destination}`));
 
       selectedSources.forEach(source => {
         selectedDestinations.forEach(destination => {
           const pair = `${source}::${destination}`;
           if (source === destination || activePairs.has(pair)) return;
-          const flow = createPacketFlow(source, destination, activeLinks);
-          if (flow) {
-            updated.push(flow);
-            activePairs.add(pair);
-          }
+          const flow = createPacketFlow(source, destination, linksRef.current);
+          updated.push(flow);
+          activePairs.add(pair);
         });
       });
 
@@ -485,16 +508,19 @@ export function useLiveNetworkDataWithCustom() {
     }, 100);
 
     return () => window.clearInterval(interval);
-  }, [activeMode, activeLinks, selectedDestinations, selectedSources, topologyKey]);
+  }, [activeMode, selectedDestinations, selectedSources, topologyKey]);
 
   useEffect(() => {
     if (activeMode === 'default') return;
     const interval = window.setInterval(() => {
       const currentNodes = nodesRef.current;
       const currentLinks = baseLinksRef.current;
-      const activeRouteEdges = new Set(packetFlowsRef.current.flatMap(flow => pathEdgeKeys(flow.path)));
+      const activeRouteEdges = new Set(packetFlowsRef.current
+        .filter(flow => flow.status !== 'blocked' && !pathContainsFailedLink(flow.path, currentLinks))
+        .flatMap(flow => pathEdgeKeys(flow.path)));
       const forecastHotspot = tickRef.current % 8 >= 5;
       const nextBaseLinks = currentLinks.map(link => {
+        if (link.status === 'failed') return { ...link, trafficLevel: 0 };
         const drift = (Math.random() - 0.5) * 18;
         const burst = Math.random() < 0.18 ? 24 : 0;
         const predictedRouteBurst = forecastHotspot && activeRouteEdges.has(edgeKey(link.source, link.target)) ? 84 : 0;
@@ -507,7 +533,7 @@ export function useLiveNetworkDataWithCustom() {
         peakHoursRef.current,
         simulatedMinuteRef.current,
         true,
-      ).map(link => ({ ...link, status: statusForTraffic(link.trafficLevel) }));
+      ).map(statusForLink);
       const nextNodes = currentNodes.map(node => {
         const incident = nextLinks.filter(link => link.source === node.id || link.target === node.id);
         const trafficLevel = incident.length > 0
@@ -538,10 +564,16 @@ export function useLiveNetworkDataWithCustom() {
       const reroutes: RerouteEvent[] = [];
       const updated = packetFlowsRef.current
         .map(flow => {
-          const progress = packetFlowProgress(flow, now);
+          const reconciledFlow = reconcilePacketFlowForFailures(flow, nextLinks, now);
+          if (reconciledFlow.status === 'blocked') return reconciledFlow;
+          if (reconciledFlow.path !== flow.path && !pathsEqual(reconciledFlow.path, flow.path)) {
+            reroutes.push(rerouteEventForFlow(flow, reconciledFlow.path, nextNodes, 'Link Failure'));
+          }
+          const currentFlow = reconciledFlow;
+          const progress = packetFlowProgress(currentFlow, now);
           if (progress >= 100) return null;
 
-          const currentEdges = pathEdgeKeys(flow.path);
+          const currentEdges = pathEdgeKeys(currentFlow.path);
           const routeHasPressure = currentEdges.some(key => {
             const link = linkByEdge.get(key);
             return Boolean(link && (link.trafficLevel >= 68 || link.status !== 'healthy'));
@@ -552,24 +584,25 @@ export function useLiveNetworkDataWithCustom() {
           }));
 
           if (shouldReroute) {
-            const alternatePath = findPath(flow.source, flow.destination, nextLinks, new Set(currentEdges), true);
-            if (alternatePath.length > 1 && !pathsEqual(alternatePath, flow.path)) {
+            const alternatePath = findAvailablePath(currentFlow.source, currentFlow.destination, nextLinks, new Set(currentEdges), true);
+            if (alternatePath.length > 1 && !pathsEqual(alternatePath, currentFlow.path)) {
               reroutes.push(rerouteEventForFlow(
-                flow,
+                currentFlow,
                 alternatePath,
                 nextNodes,
                 predictionPressure ? 'Load Balancing' : 'Congestion Detected',
               ));
               return {
-                ...flow,
+                ...currentFlow,
                 path: alternatePath,
                 progress: 0,
                 startTime: now,
+                status: 'active',
               };
             }
           }
 
-          return { ...flow, progress };
+          return { ...currentFlow, progress };
         })
         .filter((flow): flow is PacketFlow => Boolean(flow));
 
@@ -610,9 +643,8 @@ export function useLiveNetworkDataWithCustom() {
         }
       });
     });
-    if (newFlows.length === 0 && sources[0] && destinations[0]) {
-      const flow = createPacketFlow(sources[0], destinations[0], activeLinks);
-      if (flow) newFlows.push(flow);
+    if (newFlows.length === 0 && sources[0] && destinations[0] && sources[0] !== destinations[0]) {
+      newFlows.push(createPacketFlow(sources[0], destinations[0], linksRef.current));
     }
     packetFlowsRef.current = newFlows;
     setPacketFlows(newFlows);
@@ -622,7 +654,7 @@ export function useLiveNetworkDataWithCustom() {
     totalNodes: nodes.length,
     activeLinks: countPacketActiveLinks(links, packetFlows),
     congestedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'warning' || link.status === 'critical').length,
-    failedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'critical').length,
+    failedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'failed').length,
     maxTraffic: Math.max(...links.map(link => link.trafficLevel), 0),
     avgTraffic: links.length > 0 ? links.reduce((sum, link) => sum + link.trafficLevel, 0) / links.length : 0,
     activeNodes: activeMode === 'default' ? connectedSwitches.length : nodes.filter(node => node.status === 'healthy').length,

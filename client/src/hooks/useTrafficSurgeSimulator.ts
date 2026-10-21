@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NetworkLink, NetworkNode } from '@/hooks/useLiveNetworkData';
 import { useTopologyContext } from '@/contexts/TopologyContext';
 import { activePeakHourAt, nextPeakHour, PeakHourPeriod } from '@/lib/peakHours';
+import { findAvailablePath, networkEdgeKey } from '@/lib/networkRouting';
 
 type Scenario = 'normal' | 'morning' | 'evening' | 'random' | 'flash' | 'dynamic';
 export type TrafficState = 'NORMAL' | 'MODERATE' | 'RAMPING_UP' | 'PEAK' | 'SUDDEN SURGE' | 'FLASH CROWD' | 'RANDOM_SURGE' | 'RAMPING_DOWN' | 'RECOVERY';
@@ -70,7 +71,7 @@ const SCENARIOS: Array<{ value: Scenario; label: string }> = [
 ];
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
-const edgeKey = (source: string, target: string) => [source, target].sort().join('::');
+const edgeKey = networkEdgeKey;
 const formatClock = (date: Date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 const formatSimulatedTime = (minute: number) => {
   const normalized = ((minute % 1440) + 1440) % 1440;
@@ -102,33 +103,15 @@ function pathCost(path: string[], links: NetworkLink[], predictedPenalty: number
   return path.slice(0, -1).reduce((total, node, index) => {
     const next = path[index + 1];
     const link = links.find(item => edgeKey(item.source, item.target) === edgeKey(node, next));
-    return total + (link ? 1 + link.trafficLevel / 22 + predictedPenalty / 100 : 1000);
+    return total + (link && link.status !== 'failed' ? 1 + link.trafficLevel / 22 + predictedPenalty / 100 : Number.POSITIVE_INFINITY);
   }, 0);
-}
-
-function findPath(source: string, destination: string, links: NetworkLink[], blocked: Set<string> = new Set()) {
-  const queue: Array<{ node: string; path: string[] }> = [{ node: source, path: [source] }];
-  const visited = new Set([source]);
-  while (queue.length) {
-    const current = queue.shift();
-    if (!current) break;
-    if (current.node === destination) return current.path;
-    links.filter(link => !blocked.has(edgeKey(link.source, link.target)) && (link.source === current.node || link.target === current.node)).forEach(link => {
-      const next = link.source === current.node ? link.target : link.source;
-      if (!visited.has(next)) {
-        visited.add(next);
-        queue.push({ node: next, path: [...current.path, next] });
-      }
-    });
-  }
-  return [];
 }
 
 function buildInitialRouting(nodes: NetworkNode[], links: NetworkLink[]): SurgeRouting {
   const hosts = nodes.filter(node => node.type === 'host');
   const source = hosts[0]?.id ?? nodes[0]?.id ?? '';
   const destination = hosts[hosts.length - 1]?.id ?? nodes[nodes.length - 1]?.id ?? '';
-  const currentPath = findPath(source, destination, links);
+  const currentPath = findAvailablePath(source, destination, links);
   return { currentPath, recommendedPath: currentPath, currentCost: pathCost(currentPath, links, 0), recommendedCost: pathCost(currentPath, links, 0), reason: 'Monitoring baseline traffic.', action: 'MONITOR' };
 }
 
@@ -265,14 +248,15 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
       const delta = nextIntensity - previousIntensityRef.current;
       const nextTrend: TrafficSurgeState['trend'] = delta > 8 ? 'RAPIDLY INCREASING' : delta > 2 ? 'INCREASING' : delta < -3 ? 'DECREASING' : 'STABLE';
       const probability = clamp(12 + nextIntensity * 0.66 + Math.max(0, delta) * 2.8);
-      const affectedLink = links[affectedIndexRef.current % links.length];
+      const usableLinks = links.filter(link => link.status !== 'failed');
+      const affectedLink = usableLinks[affectedIndexRef.current % Math.max(usableLinks.length, 1)];
       const stressedLinks = affectedLink ? links.map(link => link === affectedLink ? { ...link, trafficLevel: clamp(nextIntensity + 12) } : link) : links;
       const hosts = nodes.filter(node => node.type === 'host');
       const source = hosts[0]?.id ?? nodes[0]?.id ?? '';
       const destination = hosts[hosts.length - 1]?.id ?? nodes[nodes.length - 1]?.id ?? '';
       const blocked = affectedLink && nextIntensity > 58 ? new Set([edgeKey(affectedLink.source, affectedLink.target)]) : new Set<string>();
-      const currentPath = findPath(source, destination, stressedLinks);
-      const recommendedPath = findPath(source, destination, stressedLinks, blocked);
+      const currentPath = findAvailablePath(source, destination, stressedLinks);
+      const recommendedPath = findAvailablePath(source, destination, stressedLinks, blocked);
       const currentCost = pathCost(currentPath, stressedLinks, probability);
       const recommendedCost = pathCost(recommendedPath, stressedLinks, probability * 0.55);
       const shouldReroute = nextIntensity > 64 && recommendedPath.length > 1 && recommendedCost < currentCost;
@@ -297,7 +281,8 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
   }, [links, nodes, running, paused, scenario, speed, intensity, trafficState, routing.action, simulatedMinute, peakHours]);
 
   const scenarioOptions = useMemo(() => SCENARIOS, []);
-  const affectedLink = links[affectedIndexRef.current % Math.max(links.length, 1)];
+  const usableLinks = links.filter(link => link.status !== 'failed');
+  const affectedLink = usableLinks[affectedIndexRef.current % Math.max(usableLinks.length, 1)];
   const affectedNodeLabels = affectedLink ? [affectedLink.source, affectedLink.target] : [];
   const activePeakHour = activePeakHourAt(peakHours, simulatedMinute);
   const nextPeak = nextPeakHour(peakHours, simulatedMinute);

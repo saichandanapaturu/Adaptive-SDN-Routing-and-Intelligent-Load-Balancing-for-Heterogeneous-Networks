@@ -55,6 +55,15 @@ export function useCustomTopology() {
     context.deleteCustomLink(sourceId, targetId);
   };
 
+  const setLinkStatus = (sourceId: string, targetId: string, status: NetworkLink['status']) => {
+    context.setCustomLinks(context.customLinks.map(link =>
+      (link.source === sourceId && link.target === targetId)
+        || (link.source === targetId && link.target === sourceId)
+        ? { ...link, status }
+        : link,
+    ));
+  };
+
   const clearTopology = () => {
     context.clearCustomTopology();
     setSelectedNodeId(null);
@@ -86,10 +95,10 @@ export function useCustomTopology() {
     updateNode,
     addLink,
     deleteLink,
+    setLinkStatus,
     clearTopology,
     exportTopology,
     importTopology,
   };
 }
-
 

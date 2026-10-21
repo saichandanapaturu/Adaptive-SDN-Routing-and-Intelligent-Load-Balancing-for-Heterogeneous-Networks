@@ -75,6 +75,7 @@ export default function Home() {
   } = useTopologyContext();
 
   const stats = getNetworkStats();
+  const blockedPacketFlowCount = packetFlows.filter(flow => flow.status === 'blocked').length;
   const activePeakHour = activePeakHourAt(peakHours, simulatedMinute);
   const simulatedTime = `${String(Math.floor(simulatedMinute / 60) % 24).padStart(2, '0')}:${String(simulatedMinute % 60).padStart(2, '0')}`;
   const [activeTab, setActiveTab] = useState('monitor');
@@ -552,6 +553,11 @@ export default function Home() {
                   <div className="rounded-xl border border-white/10 bg-slate-950/25 p-4 backdrop-blur-md">
                     <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500 mb-1.5">Packet Flows</p>
                     <p className="font-mono text-2xl font-semibold text-cyan-400">{packetFlows.length}</p>
+                    {blockedPacketFlowCount > 0 && (
+                      <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-red-300">
+                        {blockedPacketFlowCount} blocked · no available route
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardContent>
