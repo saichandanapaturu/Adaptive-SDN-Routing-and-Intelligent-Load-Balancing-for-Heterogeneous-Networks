@@ -11,6 +11,7 @@ from urllib.request import urlopen
 
 from server.controller.statistics import OFPP_LOCAL, OpenFlowStatisticsCollector
 from server.controller.telemetry_api import TelemetryApiState, TelemetryService
+from server.controller.topology_discovery import TopologyDiscoveryState
 
 
 class TelemetryApiTests(TestCase):
@@ -112,6 +113,73 @@ class TelemetryApiTests(TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(health["statistics_received"])
         self.assertEqual(health["data_status"], "stale")
+
+    def test_topology_endpoint_serializes_discovery_snapshot(self) -> None:
+        topology = TopologyDiscoveryState(
+            discovery_enabled=True,
+            now=lambda: self.now,
+        )
+        topology.switch_enter(1, [1, 2], observed_at=self.now)
+        topology.switch_enter(2, [3], observed_at=self.now)
+        topology.link_add(1, 2, 2, 3, observed_at=self.now)
+        topology.host_add(
+            1,
+            1,
+            "00:00:00:00:00:01",
+            ipv4=["10.0.0.1"],
+            observed_at=self.now,
+        )
+        self.state.topology_provider = topology.snapshot
+
+        status, body = self.get_json("/api/telemetry/topology")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["discovery_status"], "fresh")
+        self.assertEqual(body["link_discovery_status"], "fresh")
+        self.assertEqual(body["switches"][0]["ports"][1]["role"], "switch_link")
+        self.assertEqual(body["hosts"][0]["ipv4"], ["10.0.0.1"])
+        self.assertEqual(
+            body["links"],
+            [
+                {
+                    "src_dpid": 1,
+                    "src_port_no": 2,
+                    "dst_dpid": 2,
+                    "dst_port_no": 3,
+                    "observed_at": self.now.isoformat(),
+                    "status": "fresh",
+                }
+            ],
+        )
+
+    def test_topology_endpoint_reports_unconfigured_discovery(self) -> None:
+        status, body = self.get_json("/api/telemetry/topology")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["discovery_status"], "unavailable")
+        self.assertEqual(body["link_discovery_status"], "unavailable")
+        self.assertEqual(body["links"], [])
+
+    def test_route_endpoint_requires_endpoints_and_preserves_recommendation_shape(self) -> None:
+        status, body = self.get_json("/api/telemetry/route?source=1")
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"], "invalid_route_request")
+
+        self.state.route_provider = lambda source, destination: {
+            "status": "unavailable",
+            "source": source,
+            "destination": destination,
+            "candidate_paths": [],
+            "selected_path": None,
+            "signals_used": [],
+            "unavailable_signals": {"topology": "fixture"},
+            "decision_timestamp": self.now.isoformat(),
+            "reason": "fixture recommendation only",
+            "recommendation_only": True,
+        }
+        status, body = self.get_json("/api/telemetry/route?source=h1&destination=h3")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["source"], "h1")
+        self.assertEqual(body["destination"], "h3")
+        self.assertTrue(body["recommendation_only"])
 
 
 if __name__ == "__main__":

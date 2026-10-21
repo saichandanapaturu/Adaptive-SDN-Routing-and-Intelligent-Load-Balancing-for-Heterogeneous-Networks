@@ -15,7 +15,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Any, Callable, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 try:
     from server.controller.statistics import OpenFlowStatisticsCollector
@@ -37,16 +37,36 @@ class TelemetryApiState:
         collector: OpenFlowStatisticsCollector,
         switch_provider: Callable[[], List[Dict[str, Any]]],
         *,
+        topology_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+        route_provider: Optional[Callable[[str, str], Dict[str, Any]]] = None,
         stale_after_seconds: float = DEFAULT_STALE_SECONDS,
         now: Optional[Callable[[], datetime]] = None,
     ) -> None:
         self.collector = collector
         self.switch_provider = switch_provider
+        self.topology_provider = topology_provider
+        self.route_provider = route_provider
         self.stale_after_seconds = max(0.1, stale_after_seconds)
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def switches(self) -> List[Dict[str, Any]]:
         return list(self.switch_provider())
+
+    def topology(self) -> Dict[str, Any]:
+        if self.topology_provider is None:
+            return {
+                "discovery_enabled": False,
+                "discovery_status": "unavailable",
+                "link_discovery_status": "unavailable",
+                "observed_at": None,
+                "stale_after_seconds": None,
+                "last_error": "Topology discovery is not configured.",
+                "switches": [],
+                "links": [],
+                "stale_links": [],
+                "rejected_link_events": 0,
+            }
+        return self.topology_provider()
 
     def ports(self) -> List[Dict[str, Any]]:
         return self.collector.latest_as_dicts()
@@ -98,7 +118,7 @@ class TelemetryApiState:
 
 
 class _TelemetryRequestHandler(BaseHTTPRequestHandler):
-    """HTTP handler for the three read-only telemetry endpoints."""
+    """HTTP handler for the read-only telemetry endpoints."""
 
     server: "TelemetryHTTPServer"
 
@@ -116,6 +136,7 @@ class _TelemetryRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         path = urlparse(self.path).path.rstrip("/") or "/"
+        query = parse_qs(urlparse(self.path).query)
         state = self.server.state
 
         if path == "/api/telemetry/health":
@@ -123,6 +144,32 @@ class _TelemetryRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/telemetry/switches":
             self._send_json({"switches": state.switches()})
+            return
+        if path == "/api/telemetry/topology":
+            self._send_json(state.topology())
+            return
+        if path == "/api/telemetry/route":
+            source_values = query.get("source", [])
+            destination_values = query.get("destination", [])
+            if not source_values or not source_values[0] or not destination_values or not destination_values[0]:
+                self._send_json(
+                    {
+                        "error": "invalid_route_request",
+                        "message": "Both source and destination query parameters are required.",
+                    },
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
+            if state.route_provider is None:
+                self._send_json(
+                    {
+                        "error": "route_recommendation_unavailable",
+                        "message": "Route recommendation is not configured.",
+                    },
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                )
+                return
+            self._send_json(state.route_provider(source_values[0], destination_values[0]))
             return
         if path == "/api/telemetry/ports":
             health = state.health()
