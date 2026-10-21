@@ -92,7 +92,9 @@ export default function Home() {
 
   const requiredDestCount = useMemo(() => Math.max(1, Math.floor(hostNodes.length / 2)), [hostNodes]);
 
-  const telemetryLabel = activeMode !== 'default'
+  const telemetryLabel = activeMode === 'reference'
+    ? 'Simulated · no controller'
+    : activeMode !== 'default'
     ? 'Configured topology'
     : telemetryStatus === 'connecting'
       ? 'Connecting to API'
@@ -397,14 +399,16 @@ export default function Home() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <CardTitle className="text-lg font-semibold">
-                        {activeMode === 'generated' ? 'Generated Network Topology' : hasCustomTopology ? 'Live Custom Network Topology' : 'Network Topology'}
+                        {activeMode === 'generated' ? 'Generated Network Topology' : activeMode === 'custom' ? 'Live Custom Network Topology' : 'Network Topology'}
                       </CardTitle>
                       <CardDescription>
                         {activeMode === 'generated'
                           ? 'Configured topology visualization; OpenFlow mapping is not verified for generated nodes.'
-                          : hasCustomTopology
+                          : activeMode === 'custom'
                             ? 'Configured custom topology; OpenFlow mapping is not verified for custom nodes.'
-                            : 'Controller-discovered links and installed forwarding state. Live controller flows are not animated.'}
+                            : activeMode === 'reference'
+                              ? 'No controller connected: AIFE reference topology (mininet/topology.py) with traffic driven by the Traffic Simulator. Simulated, not real telemetry.'
+                              : 'Controller-discovered links and installed forwarding state. Live controller flows are not animated.'}
                       </CardDescription>
                       {activePeakHour && (
                         <p role="status" className="mt-2 font-mono text-[11px] uppercase tracking-wider text-amber-200">
@@ -416,7 +420,7 @@ export default function Home() {
                       )}
                     </div>
                     <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                      {activeMode === 'generated' ? `GENERATED LIVE · TICK ${telemetryTick}` : hasCustomTopology ? `CUSTOM LIVE · TICK ${telemetryTick}` : 'DEFAULT LIVE'}
+                      {activeMode === 'generated' ? `GENERATED LIVE · TICK ${telemetryTick}` : activeMode === 'custom' ? `CUSTOM LIVE · TICK ${telemetryTick}` : activeMode === 'reference' ? `DEFAULT LIVE · SIMULATED · TICK ${telemetryTick}` : 'DEFAULT LIVE'}
                     </div>
                   </div>
                 </CardHeader>

@@ -32,6 +32,29 @@ import { toast } from 'sonner';
 
 export type DashboardTelemetryStatus = TelemetryDataStatus | 'connecting' | 'awaiting-statistics';
 
+// AIFE's Mininet reference topology (mininet/topology.py). The default view
+// shows it, driven by the traffic simulator, while no controller topology is
+// available; detected controller state replaces it as soon as it exists.
+export const REFERENCE_NODES: NetworkNode[] = [
+  { id: 'host-1', label: 'h1', type: 'host', status: 'healthy', x: 60, y: 170, trafficLevel: 0 },
+  { id: 'switch-1', label: 's1', type: 'switch', status: 'healthy', x: 220, y: 170, trafficLevel: 0 },
+  { id: 'switch-2', label: 's2', type: 'switch', status: 'healthy', x: 400, y: 80, trafficLevel: 0 },
+  { id: 'switch-3', label: 's3', type: 'switch', status: 'healthy', x: 400, y: 260, trafficLevel: 0 },
+  { id: 'host-2', label: 'h2', type: 'host', status: 'healthy', x: 400, y: 380, trafficLevel: 0 },
+  { id: 'switch-4', label: 's4', type: 'switch', status: 'healthy', x: 580, y: 170, trafficLevel: 0 },
+  { id: 'host-3', label: 'h3', type: 'host', status: 'healthy', x: 740, y: 170, trafficLevel: 0 },
+];
+
+export const REFERENCE_LINKS: NetworkLink[] = [
+  { source: 'host-1', target: 'switch-1', bandwidth: 10, trafficLevel: 0, status: 'healthy', origin: 'simulated' },
+  { source: 'host-2', target: 'switch-3', bandwidth: 10, trafficLevel: 0, status: 'healthy', origin: 'simulated' },
+  { source: 'host-3', target: 'switch-4', bandwidth: 10, trafficLevel: 0, status: 'healthy', origin: 'simulated' },
+  { source: 'switch-1', target: 'switch-2', bandwidth: 10, trafficLevel: 0, status: 'healthy', origin: 'simulated' },
+  { source: 'switch-1', target: 'switch-3', bandwidth: 10, trafficLevel: 0, status: 'healthy', origin: 'simulated' },
+  { source: 'switch-2', target: 'switch-4', bandwidth: 10, trafficLevel: 0, status: 'healthy', origin: 'simulated' },
+  { source: 'switch-3', target: 'switch-4', bandwidth: 10, trafficLevel: 0, status: 'healthy', origin: 'simulated' },
+];
+
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 
 function openFlowPortStatsToDashboard(stats: import('@/lib/telemetryApi').TelemetryPort[]): PortStat[] {
@@ -225,6 +248,19 @@ function createPacketFlow(source: string, destination: string, links: NetworkLin
   };
 }
 
+export type DashboardTopologyMode = 'default' | 'reference' | 'custom' | 'generated';
+
+/**
+ * Mode the dashboard displays. 'default' is the controller view; without a
+ * controller topology it becomes the simulated reference topology.
+ */
+export function displayedTopologyMode(
+  selectedMode: 'default' | 'custom' | 'generated',
+  controllerAvailable: boolean,
+): DashboardTopologyMode {
+  return selectedMode === 'default' && !controllerAvailable ? 'reference' : selectedMode;
+}
+
 export function packetFlowProgress(flow: PacketFlow, now: number): number {
   return flow.duration > 0
     ? clamp(((now - flow.startTime) / flow.duration) * 100)
@@ -246,17 +282,19 @@ export function useLiveNetworkDataWithCustom() {
   } = useTopologyContext();
   const hasCustomTopology = customNodes.length > 0;
   const hasGeneratedTopology = generatedNodes.length > 0;
-  const activeMode = isUsingGenerated && hasGeneratedTopology ? 'generated' : isUsingCustom && hasCustomTopology ? 'custom' : 'default';
+  const selectedMode = isUsingGenerated && hasGeneratedTopology ? 'generated' : isUsingCustom && hasCustomTopology ? 'custom' : 'default';
+  const [controllerAvailable, setControllerAvailable] = useState(false);
+  const activeMode = displayedTopologyMode(selectedMode, controllerAvailable);
 
   const activeNodes = useMemo(
-    () => (activeMode === 'generated' ? generatedNodes : activeMode === 'custom' ? customNodes : []),
+    () => (activeMode === 'generated' ? generatedNodes : activeMode === 'custom' ? customNodes : activeMode === 'reference' ? REFERENCE_NODES : []),
     [activeMode, customNodes, generatedNodes],
   );
 
   const activeNodeIds = useMemo(() => new Set(activeNodes.map(node => node.id)), [activeNodes]);
   const activeLinks = useMemo(
     () => {
-      const sourceLinks = activeMode === 'generated' ? generatedLinks : activeMode === 'custom' ? customLinks : [];
+      const sourceLinks = activeMode === 'generated' ? generatedLinks : activeMode === 'custom' ? customLinks : activeMode === 'reference' ? REFERENCE_LINKS : [];
       return sourceLinks.filter(link => activeNodeIds.has(link.source) && activeNodeIds.has(link.target));
     },
     [activeMode, activeNodeIds, customLinks, generatedLinks],
@@ -417,7 +455,9 @@ export function useLiveNetworkDataWithCustom() {
   }, [activeMode, activeNodes, peakHours, simulatedMinute, trafficOverlay, topologyKey]);
 
   useEffect(() => {
-    if (activeMode !== 'default') return;
+    // Poll whenever the default view is selected, including while it shows the
+    // reference topology, so a controller that comes up replaces it.
+    if (selectedMode !== 'default') return;
     let cancelled = false;
     let inFlight = false;
 
@@ -430,6 +470,12 @@ export function useLiveNetworkDataWithCustom() {
         // leaves the prediction cards in their unavailable state.
         const model = await fetchModelStatus().catch(() => null);
         if (cancelled) return;
+        if (snapshot.topology.nodes.length === 0) {
+          setControllerAvailable(false);
+          setTelemetryStatus(snapshot.health.controller_connected ? 'awaiting-statistics' : 'unavailable');
+          return;
+        }
+        setControllerAvailable(true);
         setModelStatus(model);
         setConnectedSwitches(snapshot.switches);
         setControllerFlows(snapshot.flows);
@@ -492,10 +538,11 @@ export function useLiveNetworkDataWithCustom() {
         });
       } catch {
         if (!cancelled) {
+          // Switching to the reference topology resets ports and flows for it.
+          setControllerAvailable(false);
           setTelemetryStatus('unavailable');
           setConnectedSwitches([]);
           setLastTelemetryUpdate(null);
-          setPortStats([]);
           setControllerFlows([]);
           setModelStatus(null);
         }
@@ -510,7 +557,7 @@ export function useLiveNetworkDataWithCustom() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeMode]);
+  }, [selectedMode]);
 
   useEffect(() => {
     if (activeMode === 'default') return;
