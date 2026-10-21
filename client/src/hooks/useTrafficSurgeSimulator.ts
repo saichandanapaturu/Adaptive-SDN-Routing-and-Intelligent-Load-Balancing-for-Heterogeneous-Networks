@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NetworkLink, NetworkNode, RerouteEvent } from '@/hooks/useLiveNetworkData';
 import { useTopologyContext } from '@/contexts/TopologyContext';
-import { activePeakHourAt, nextPeakHour, PeakHourPeriod } from '@/lib/peakHours';
+import { activePeakHourAt, applyTrafficOverlay, nextPeakHour, PeakHourPeriod, SimulatedTrafficOverlay } from '@/lib/peakHours';
 import { findAvailablePath, networkEdgeKey } from '@/lib/networkRouting';
 
 type Scenario = 'normal' | 'morning' | 'evening' | 'random' | 'flash' | 'dynamic';
@@ -120,7 +120,7 @@ export function useTrafficSurgeSimulator(
   links: NetworkLink[],
   onReroute?: (event: RerouteEvent) => void,
 ) {
-  const { peakHours, simulatedMinute, setSimulatedMinute } = useTopologyContext();
+  const { peakHours, simulatedMinute, setSimulatedMinute, setTrafficOverlay } = useTopologyContext();
   // A ref keeps the interval effect from restarting when the callback identity changes.
   const onRerouteRef = useRef(onReroute);
   onRerouteRef.current = onReroute;
@@ -165,6 +165,7 @@ export function useTrafficSurgeSimulator(
     setCurrentEvent(undefined);
     randomEventMinuteRef.current = null;
     randomEventDetectedRef.current = false;
+    setTrafficOverlay(null);
     setRouting(buildInitialRouting(nodes, links));
   };
 
@@ -187,6 +188,7 @@ export function useTrafficSurgeSimulator(
     setCurrentEvent(undefined);
     randomEventMinuteRef.current = 90 + Math.floor(random() * 1260);
     randomEventDetectedRef.current = false;
+    setTrafficOverlay(null);
     setRouting(buildInitialRouting(nodes, links));
     addEvent('Normal traffic baseline established.', 'neutral');
   };
@@ -197,107 +199,122 @@ export function useTrafficSurgeSimulator(
     addEvent('Unpredictable traffic surge injected into a targeted flow.', 'warning');
   };
 
+  // Each tick reads the latest render's values through this ref, so the
+  // interval is created once per run and speed. Depending on links/intensity
+  // restarted it on every topology update and could starve the simulation.
+  const tickRef = useRef<() => void>(() => undefined);
+  tickRef.current = () => {
+    if (links.length === 0) return;
+    elapsedRef.current += 1;
+    const step = elapsedRef.current;
+    const random = randomRef.current;
+    const nextMinute = (simulatedMinute + 15) % 1440;
+    const activePeak = activePeakHourAt(peakHours, nextMinute);
+    const randomEventMinute = randomEventMinuteRef.current ?? 720;
+    const randomWindow = nextMinute >= randomEventMinute && nextMinute <= randomEventMinute + 30;
+    if (randomWindow && !randomEventDetectedRef.current) {
+      randomEventDetectedRef.current = true;
+      setCurrentEvent({ name: 'Unexpected Traffic Surge', detectedMinute: randomEventMinute, durationMinutes: 30, impact: 'HIGH' });
+      addEvent(`Unexpected traffic surge detected at ${formatSimulatedTime(randomEventMinute)}.`, 'warning');
+    }
+    setSimulatedMinute(nextMinute);
+    const duration = scenario === 'flash' ? 18 : scenario === 'normal' ? 22 : 28;
+    const surgeStart = scenario === 'normal' ? duration + 1 : 3 + Math.floor(random() * 5);
+    const surgeEnd = surgeStart + (scenario === 'flash' ? 4 : 8 + Math.floor(random() * 5));
+    let target = 28;
+    let nextState: TrafficState = 'NORMAL';
+    if (step < surgeStart - 2) {
+      target = scenario === 'morning' || scenario === 'evening' ? 42 : 30;
+      nextState = target > 40 ? 'MODERATE' : 'NORMAL';
+    } else if (step < surgeStart) {
+      target = 48;
+      nextState = 'MODERATE';
+    } else if (step < surgeStart + 2) {
+      target = scenario === 'flash' ? 94 : 76;
+      nextState = scenario === 'flash' ? 'FLASH CROWD' : 'SUDDEN SURGE';
+    } else if (step < surgeEnd) {
+      const peakNoise = random();
+      target = scenario === 'normal' ? 45 : scenario === 'flash' ? 88 : 72 + peakNoise * 18;
+      nextState = 'PEAK';
+    } else if (step < surgeEnd + 5) {
+      target = 52 - (step - surgeEnd) * 4;
+      nextState = 'RECOVERY';
+    } else {
+      const recoveryNoise = random();
+      target = 28 + recoveryNoise * 8;
+      nextState = 'NORMAL';
+      if (step > duration) elapsedRef.current = 0;
+    }
+
+    const dayBaseline = baselineForMinute(nextMinute);
+    const eventBoost = randomWindow ? 28 : 0;
+    target = clamp(target * 0.58 + dayBaseline * 0.42 + eventBoost);
+    if (activePeak) {
+      target = Math.max(target, activePeak.intensity);
+      if (nextState === 'NORMAL') nextState = 'PEAK';
+    }
+    if (randomWindow) nextState = 'RANDOM_SURGE';
+    const currentIntensity = intensity;
+    const smoothing = scenario === 'flash' && nextState === 'FLASH CROWD' ? 0.72 : 0.32;
+    const nextIntensity = clamp(currentIntensity + (target - currentIntensity) * smoothing + (random() - 0.5) * 4);
+    const delta = nextIntensity - previousIntensityRef.current;
+    const nextTrend: TrafficSurgeState['trend'] = delta > 8 ? 'RAPIDLY INCREASING' : delta > 2 ? 'INCREASING' : delta < -3 ? 'DECREASING' : 'STABLE';
+    const probability = clamp(12 + nextIntensity * 0.66 + Math.max(0, delta) * 2.8);
+    const usableLinks = links.filter(link => link.status !== 'failed');
+    const affectedLink = usableLinks[affectedIndexRef.current % Math.max(usableLinks.length, 1)];
+    const overlay: SimulatedTrafficOverlay | null = affectedLink
+      ? { edge: edgeKey(affectedLink.source, affectedLink.target), trafficLevel: clamp(nextIntensity + 12) }
+      : null;
+    const stressedLinks = applyTrafficOverlay(links, overlay);
+    const hosts = nodes.filter(node => node.type === 'host');
+    const source = hosts[0]?.id ?? nodes[0]?.id ?? '';
+    const destination = hosts[hosts.length - 1]?.id ?? nodes[nodes.length - 1]?.id ?? '';
+    const blocked = affectedLink && nextIntensity > 58 ? new Set([edgeKey(affectedLink.source, affectedLink.target)]) : new Set<string>();
+    const currentPath = findAvailablePath(source, destination, stressedLinks);
+    const recommendedPath = findAvailablePath(source, destination, stressedLinks, blocked);
+    const currentCost = pathCost(currentPath, stressedLinks, probability);
+    const recommendedCost = pathCost(recommendedPath, stressedLinks, probability * 0.55);
+    const shouldReroute = nextIntensity > 64 && recommendedPath.length > 1 && recommendedCost < currentCost;
+    const action: SurgeRouting['action'] = nextState === 'RECOVERY' ? 'RECOVER' : shouldReroute ? 'REROUTE' : probability > 58 ? 'PREPARE REROUTE' : 'MONITOR';
+
+    if (nextState !== trafficState) {
+      const message = nextState === 'SUDDEN SURGE' || nextState === 'FLASH CROWD' ? `${nextState} detected on ${affectedLink?.source ?? 'targeted'} → ${affectedLink?.target ?? 'flow'}.` : `${nextState} phase entered.`;
+      addEvent(message, nextState === 'NORMAL' ? 'success' : nextState === 'RECOVERY' ? 'neutral' : 'warning');
+    }
+    if (shouldReroute && action === 'REROUTE' && routing.action !== 'REROUTE') {
+      addEvent('AIFE recommends alternate path after rapidly increasing utilization.', 'critical');
+      const labels = new Map(nodes.map(node => [node.id, node.label]));
+      onRerouteRef.current?.({
+        id: `surge-reroute-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: new Date(),
+        source: labels.get(source) ?? source,
+        destination: labels.get(destination) ?? destination,
+        reason: 'Congestion Detected',
+        oldPath: currentPath.map(id => labels.get(id) ?? id),
+        newPath: recommendedPath.map(id => labels.get(id) ?? id),
+      });
+    }
+
+    setTrafficState(nextState);
+    setIntensity(nextIntensity);
+    setSurgeActive(nextState === 'SUDDEN SURGE' || nextState === 'FLASH CROWD' || nextState === 'PEAK');
+    setCongestionProbability(probability);
+    setTrend(nextTrend);
+    setRouting({ currentPath, recommendedPath: shouldReroute ? recommendedPath : currentPath, currentCost, recommendedCost: shouldReroute ? recommendedCost : currentCost, reason: shouldReroute ? `Rapid traffic increase detected near ${affectedLink?.source ?? 'the affected link'} → ${affectedLink?.target ?? 'target flow'}.` : nextState === 'RECOVERY' ? 'Traffic is decreasing; reevaluating the original path.' : 'Monitoring utilization and recent traffic variance.', action });
+    setHistory(previous => [...previous, { time: formatClock(new Date()), intensity: nextIntensity, state: nextState }].slice(-24));
+    setTrafficOverlay(overlay);
+    previousIntensityRef.current = nextIntensity;
+  };
+
   useEffect(() => {
-    if (!running || paused || links.length === 0) return;
-    const interval = window.setInterval(() => {
-      elapsedRef.current += 1;
-      const step = elapsedRef.current;
-      const random = randomRef.current;
-      const nextMinute = (simulatedMinute + 15) % 1440;
-      const activePeak = activePeakHourAt(peakHours, nextMinute);
-      const randomEventMinute = randomEventMinuteRef.current ?? 720;
-      const randomWindow = nextMinute >= randomEventMinute && nextMinute <= randomEventMinute + 30;
-      if (randomWindow && !randomEventDetectedRef.current) {
-        randomEventDetectedRef.current = true;
-        setCurrentEvent({ name: 'Unexpected Traffic Surge', detectedMinute: randomEventMinute, durationMinutes: 30, impact: 'HIGH' });
-        addEvent(`Unexpected traffic surge detected at ${formatSimulatedTime(randomEventMinute)}.`, 'warning');
-      }
-      setSimulatedMinute(nextMinute);
-      const duration = scenario === 'flash' ? 18 : scenario === 'normal' ? 22 : 28;
-      const surgeStart = scenario === 'normal' ? duration + 1 : 3 + Math.floor(random() * 5);
-      const surgeEnd = surgeStart + (scenario === 'flash' ? 4 : 8 + Math.floor(random() * 5));
-      let target = 28;
-      let nextState: TrafficState = 'NORMAL';
-      if (step < surgeStart - 2) {
-        target = scenario === 'morning' || scenario === 'evening' ? 42 : 30;
-        nextState = target > 40 ? 'MODERATE' : 'NORMAL';
-      } else if (step < surgeStart) {
-        target = 48;
-        nextState = 'MODERATE';
-      } else if (step < surgeStart + 2) {
-        target = scenario === 'flash' ? 94 : 76;
-        nextState = scenario === 'flash' ? 'FLASH CROWD' : 'SUDDEN SURGE';
-      } else if (step < surgeEnd) {
-        const peakNoise = random();
-        target = scenario === 'normal' ? 45 : scenario === 'flash' ? 88 : 72 + peakNoise * 18;
-        nextState = 'PEAK';
-      } else if (step < surgeEnd + 5) {
-        target = 52 - (step - surgeEnd) * 4;
-        nextState = 'RECOVERY';
-      } else {
-        const recoveryNoise = random();
-        target = 28 + recoveryNoise * 8;
-        nextState = 'NORMAL';
-        if (step > duration) elapsedRef.current = 0;
-      }
-
-      const dayBaseline = baselineForMinute(nextMinute);
-      const eventBoost = randomWindow ? 28 : 0;
-      target = clamp(target * 0.58 + dayBaseline * 0.42 + eventBoost);
-      if (activePeak) {
-        target = Math.max(target, activePeak.intensity);
-        if (nextState === 'NORMAL') nextState = 'PEAK';
-      }
-      if (randomWindow) nextState = 'RANDOM_SURGE';
-      const currentIntensity = intensity;
-      const smoothing = scenario === 'flash' && nextState === 'FLASH CROWD' ? 0.72 : 0.32;
-      const nextIntensity = clamp(currentIntensity + (target - currentIntensity) * smoothing + (random() - 0.5) * 4);
-      const delta = nextIntensity - previousIntensityRef.current;
-      const nextTrend: TrafficSurgeState['trend'] = delta > 8 ? 'RAPIDLY INCREASING' : delta > 2 ? 'INCREASING' : delta < -3 ? 'DECREASING' : 'STABLE';
-      const probability = clamp(12 + nextIntensity * 0.66 + Math.max(0, delta) * 2.8);
-      const usableLinks = links.filter(link => link.status !== 'failed');
-      const affectedLink = usableLinks[affectedIndexRef.current % Math.max(usableLinks.length, 1)];
-      const stressedLinks = affectedLink ? links.map(link => link === affectedLink ? { ...link, trafficLevel: clamp(nextIntensity + 12) } : link) : links;
-      const hosts = nodes.filter(node => node.type === 'host');
-      const source = hosts[0]?.id ?? nodes[0]?.id ?? '';
-      const destination = hosts[hosts.length - 1]?.id ?? nodes[nodes.length - 1]?.id ?? '';
-      const blocked = affectedLink && nextIntensity > 58 ? new Set([edgeKey(affectedLink.source, affectedLink.target)]) : new Set<string>();
-      const currentPath = findAvailablePath(source, destination, stressedLinks);
-      const recommendedPath = findAvailablePath(source, destination, stressedLinks, blocked);
-      const currentCost = pathCost(currentPath, stressedLinks, probability);
-      const recommendedCost = pathCost(recommendedPath, stressedLinks, probability * 0.55);
-      const shouldReroute = nextIntensity > 64 && recommendedPath.length > 1 && recommendedCost < currentCost;
-      const action: SurgeRouting['action'] = nextState === 'RECOVERY' ? 'RECOVER' : shouldReroute ? 'REROUTE' : probability > 58 ? 'PREPARE REROUTE' : 'MONITOR';
-
-      if (nextState !== trafficState) {
-        const message = nextState === 'SUDDEN SURGE' || nextState === 'FLASH CROWD' ? `${nextState} detected on ${affectedLink?.source ?? 'targeted'} → ${affectedLink?.target ?? 'flow'}.` : `${nextState} phase entered.`;
-        addEvent(message, nextState === 'NORMAL' ? 'success' : nextState === 'RECOVERY' ? 'neutral' : 'warning');
-      }
-      if (shouldReroute && action === 'REROUTE' && routing.action !== 'REROUTE') {
-        addEvent('AIFE recommends alternate path after rapidly increasing utilization.', 'critical');
-        const labels = new Map(nodes.map(node => [node.id, node.label]));
-        onRerouteRef.current?.({
-          id: `surge-reroute-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          timestamp: new Date(),
-          source: labels.get(source) ?? source,
-          destination: labels.get(destination) ?? destination,
-          reason: 'Congestion Detected',
-          oldPath: currentPath.map(id => labels.get(id) ?? id),
-          newPath: recommendedPath.map(id => labels.get(id) ?? id),
-        });
-      }
-
-      setTrafficState(nextState);
-      setIntensity(nextIntensity);
-      setSurgeActive(nextState === 'SUDDEN SURGE' || nextState === 'FLASH CROWD' || nextState === 'PEAK');
-      setCongestionProbability(probability);
-      setTrend(nextTrend);
-      setRouting({ currentPath, recommendedPath: shouldReroute ? recommendedPath : currentPath, currentCost, recommendedCost: shouldReroute ? recommendedCost : currentCost, reason: shouldReroute ? `Rapid traffic increase detected near ${affectedLink?.source ?? 'the affected link'} → ${affectedLink?.target ?? 'target flow'}.` : nextState === 'RECOVERY' ? 'Traffic is decreasing; reevaluating the original path.' : 'Monitoring utilization and recent traffic variance.', action });
-      setHistory(previous => [...previous, { time: formatClock(new Date()), intensity: nextIntensity, state: nextState }].slice(-24));
-      previousIntensityRef.current = nextIntensity;
-    }, Math.max(200, 1000 / speed));
+    if (!running || paused) return;
+    const interval = window.setInterval(() => tickRef.current(), Math.max(200, 1000 / speed));
     return () => window.clearInterval(interval);
-  }, [links, nodes, running, paused, scenario, speed, intensity, trafficState, routing.action, simulatedMinute, peakHours]);
+  }, [running, paused, speed]);
+
+  // The surge belongs to this simulator instance; remove it from the shared
+  // topology traffic when the simulator unmounts.
+  useEffect(() => () => setTrafficOverlay(null), [setTrafficOverlay]);
 
   const scenarioOptions = useMemo(() => SCENARIOS, []);
   const usableLinks = links.filter(link => link.status !== 'failed');

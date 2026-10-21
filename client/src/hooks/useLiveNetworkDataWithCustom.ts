@@ -17,7 +17,7 @@ import {
   TelemetryModelStatus,
   TelemetrySwitch,
 } from '@/lib/telemetryApi';
-import { applyPeakHourSchedule } from '@/lib/peakHours';
+import { simulatedLinkTraffic } from '@/lib/peakHours';
 import {
   congestionReroutePath,
   findAvailablePath,
@@ -241,6 +241,8 @@ export function useLiveNetworkDataWithCustom() {
     isUsingGenerated,
     peakHours,
     simulatedMinute,
+    trafficOverlay,
+    setTrafficOverlay,
   } = useTopologyContext();
   const hasCustomTopology = customNodes.length > 0;
   const hasGeneratedTopology = generatedNodes.length > 0;
@@ -288,6 +290,7 @@ export function useLiveNetworkDataWithCustom() {
   const baseLinksRef = useRef(activeLinks);
   const peakHoursRef = useRef(peakHours);
   const simulatedMinuteRef = useRef(simulatedMinute);
+  const trafficOverlayRef = useRef(trafficOverlay);
   const packetFlowsRef = useRef<PacketFlow[]>([]);
   const predictionsRef = useRef<PredictionData[]>([buildPrediction(activeLinks)]);
   const tickRef = useRef(0);
@@ -309,7 +312,8 @@ export function useLiveNetworkDataWithCustom() {
   useEffect(() => {
     peakHoursRef.current = peakHours;
     simulatedMinuteRef.current = simulatedMinute;
-  }, [peakHours, simulatedMinute]);
+    trafficOverlayRef.current = trafficOverlay;
+  }, [peakHours, simulatedMinute, trafficOverlay]);
 
   useEffect(() => {
     baseLinksRef.current = activeLinks.map(link => ({ ...link, trafficLevel: 0, status: link.status }));
@@ -334,6 +338,8 @@ export function useLiveNetworkDataWithCustom() {
     setConnectedSwitches([]);
     setControllerFlows([]);
     setModelStatus(null);
+    // A surge targets an edge of the previous topology; the simulator re-targets on its next tick.
+    setTrafficOverlay(null);
     setLastTelemetryUpdate(null);
     tickRef.current = 0;
     setTick(0);
@@ -389,10 +395,11 @@ export function useLiveNetworkDataWithCustom() {
 
   useEffect(() => {
     if (activeMode === 'default') return;
-    const scheduledLinks = applyPeakHourSchedule(
+    const scheduledLinks = simulatedLinkTraffic(
       baseLinksRef.current,
       peakHoursRef.current,
       simulatedMinuteRef.current,
+      trafficOverlayRef.current,
       true,
     ).map(statusForLink);
     linksRef.current = scheduledLinks;
@@ -407,7 +414,7 @@ export function useLiveNetworkDataWithCustom() {
     });
     nodesRef.current = scheduledNodes;
     setNodes(scheduledNodes);
-  }, [activeMode, activeNodes, peakHours, simulatedMinute, topologyKey]);
+  }, [activeMode, activeNodes, peakHours, simulatedMinute, trafficOverlay, topologyKey]);
 
   useEffect(() => {
     if (activeMode !== 'default') return;
@@ -523,10 +530,11 @@ export function useLiveNetworkDataWithCustom() {
         return { ...link, trafficLevel, status: statusForTraffic(trafficLevel) };
       });
       baseLinksRef.current = nextBaseLinks;
-      const nextLinks = applyPeakHourSchedule(
+      const nextLinks = simulatedLinkTraffic(
         nextBaseLinks,
         peakHoursRef.current,
         simulatedMinuteRef.current,
+        trafficOverlayRef.current,
         true,
       ).map(statusForLink);
       const nextNodes = currentNodes.map(node => {

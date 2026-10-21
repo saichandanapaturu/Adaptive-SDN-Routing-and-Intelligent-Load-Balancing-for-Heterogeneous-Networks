@@ -1,3 +1,5 @@
+import { networkEdgeKey } from './networkRouting';
+
 export interface PeakHourPeriod {
   id: string;
   name: string;
@@ -179,6 +181,45 @@ export function applyPeakHourSchedule<T extends { trafficLevel: number }>(
     ...link,
     trafficLevel: applyPeakHourLoad(link.trafficLevel, peak),
   }));
+}
+
+/**
+ * Live load the Traffic Surge Simulator places on the link it is stressing.
+ * It is shared through TopologyContext so the simulator and the topology read
+ * the same value; it is never persisted.
+ */
+export interface SimulatedTrafficOverlay {
+  /** networkEdgeKey(source, target) of the stressed link. */
+  edge: string;
+  trafficLevel: number;
+}
+
+export function applyTrafficOverlay<T extends { source: string; target: string; trafficLevel: number; status?: string }>(
+  links: T[],
+  overlay: SimulatedTrafficOverlay | null,
+): T[] {
+  if (!overlay) return links;
+  return links.map(link => (
+    link.status !== 'failed' && networkEdgeKey(link.source, link.target) === overlay.edge
+      ? { ...link, trafficLevel: Math.max(0, Math.min(100, overlay.trafficLevel)) }
+      : link
+  ));
+}
+
+/**
+ * Simulated traffic shown by the topology: the active peak-hour period's
+ * network-wide load floor, then the simulator's surge on its stressed link.
+ * Disabled for live controller telemetry, which is returned unchanged.
+ */
+export function simulatedLinkTraffic<T extends { source: string; target: string; trafficLevel: number; status?: string }>(
+  links: T[],
+  periods: PeakHourPeriod[],
+  minute: number,
+  overlay: SimulatedTrafficOverlay | null,
+  simulationEnabled: boolean,
+): T[] {
+  if (!simulationEnabled) return links;
+  return applyTrafficOverlay(applyPeakHourSchedule(links, periods, minute, true), overlay);
 }
 
 export function peakHourDurationMinutes(period: PeakHourPeriod): number {

@@ -4,6 +4,7 @@ import {
   DEFAULT_PEAK_HOURS,
   PEAK_HOURS_STORAGE_KEY,
   PeakHourPeriod,
+  SimulatedTrafficOverlay,
   parsePeakHourSchedule,
   serializePeakHourSchedule,
 } from '@/lib/peakHours';
@@ -16,6 +17,7 @@ interface TopologyContextType {
   generatedLinks: NetworkLink[];
   peakHours: PeakHourPeriod[];
   simulatedMinute: number;
+  trafficOverlay: SimulatedTrafficOverlay | null;
   isUsingCustom: boolean;
   isUsingGenerated: boolean;
   setCustomNodes: (nodes: NetworkNode[]) => void;
@@ -24,6 +26,7 @@ interface TopologyContextType {
   setGeneratedLinks: (links: NetworkLink[]) => void;
   setPeakHours: React.Dispatch<React.SetStateAction<PeakHourPeriod[]>>;
   setSimulatedMinute: (minute: number) => void;
+  setTrafficOverlay: (overlay: SimulatedTrafficOverlay | null) => void;
   setIsUsingCustom: (value: boolean) => void;
   setIsUsingGenerated: (value: boolean) => void;
   addCustomNode: (node: NetworkNode) => void;
@@ -52,6 +55,8 @@ export function TopologyProvider({ children }: { children: ReactNode }) {
     }
   });
   const [simulatedMinute, setSimulatedMinuteState] = useState(17 * 60 + 30);
+  // Runtime surge state from the Traffic Surge Simulator; intentionally not persisted.
+  const [trafficOverlay, setTrafficOverlay] = useState<SimulatedTrafficOverlay | null>(null);
   const [customNodes, setCustomNodesState] = useState<NetworkNode[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -218,6 +223,7 @@ export function TopologyProvider({ children }: { children: ReactNode }) {
         generatedLinks,
         peakHours,
         simulatedMinute,
+        trafficOverlay,
         isUsingCustom,
         isUsingGenerated,
         setCustomNodes,
@@ -226,6 +232,7 @@ export function TopologyProvider({ children }: { children: ReactNode }) {
         setGeneratedLinks,
         setPeakHours,
         setSimulatedMinute,
+        setTrafficOverlay,
         setIsUsingCustom,
         setIsUsingGenerated,
         addCustomNode,
