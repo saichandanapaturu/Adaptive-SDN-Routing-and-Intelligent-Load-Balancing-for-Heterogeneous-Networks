@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import Any, Dict
 from unittest import TestCase, main
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from server.controller.statistics import OFPP_LOCAL, OpenFlowStatisticsCollector
 from server.controller.telemetry_api import TelemetryApiState, TelemetryService
@@ -21,6 +21,9 @@ class TelemetryApiTests(TestCase):
         self.state = TelemetryApiState(
             self.collector,
             lambda: list(self.switches),
+            lambda: {"nodes": [{"id": "switch-1"}], "links": []},
+            lambda: [{"id": "controller-1", "type": "link_failed"}],
+            lambda: [{"source_mac": "00:00:00:00:00:01", "status": "blocked"}],
             stale_after_seconds=5,
             now=lambda: self.now,
         )
@@ -65,6 +68,26 @@ class TelemetryApiTests(TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(health["controller_connected"])
         self.assertFalse(health["statistics_received"])
+
+    def test_topology_events_and_forwarding_endpoints_expose_controller_state(self) -> None:
+        self.assertEqual(self.get_json("/api/telemetry/topology"), (200, {"nodes": [{"id": "switch-1"}], "links": []}))
+        self.assertEqual(self.get_json("/api/telemetry/events"), (200, {"events": [{"id": "controller-1", "type": "link_failed"}]}))
+        self.assertEqual(self.get_json("/api/telemetry/forwarding"), (200, {"flows": [{"source_mac": "00:00:00:00:00:01", "status": "blocked"}]}))
+
+    def test_browser_cors_is_limited_to_loopback_origins(self) -> None:
+        local_request = Request(
+            self.base_url + "/api/telemetry/topology",
+            headers={"Origin": "http://localhost:5173"},
+        )
+        with urlopen(local_request, timeout=2) as response:
+            self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "http://localhost:5173")
+
+        remote_request = Request(
+            self.base_url + "/api/telemetry/topology",
+            headers={"Origin": "https://example.invalid"},
+        )
+        with urlopen(remote_request, timeout=2) as response:
+            self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
 
     def test_valid_statistics_local_port_excluded_and_summary(self) -> None:
         self.switches.extend([

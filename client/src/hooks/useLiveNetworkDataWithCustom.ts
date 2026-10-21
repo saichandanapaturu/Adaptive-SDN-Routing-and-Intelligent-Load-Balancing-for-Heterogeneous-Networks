@@ -9,7 +9,7 @@ import {
   PredictionData,
   PacketFlow,
 } from './useLiveNetworkData';
-import { fetchTelemetrySnapshot, TelemetryDataStatus, TelemetrySwitch } from '@/lib/telemetryApi';
+import { fetchTelemetrySnapshot, TelemetryDataStatus, TelemetryForwardedFlow, TelemetrySwitch } from '@/lib/telemetryApi';
 import { applyPeakHourSchedule } from '@/lib/peakHours';
 import {
   findAvailablePath,
@@ -283,14 +283,14 @@ export function useLiveNetworkDataWithCustom() {
   const activeMode = isUsingGenerated && hasGeneratedTopology ? 'generated' : isUsingCustom && hasCustomTopology ? 'custom' : 'default';
 
   const activeNodes = useMemo(
-    () => (activeMode === 'generated' ? generatedNodes : activeMode === 'custom' ? customNodes : DEFAULT_NODES),
+    () => (activeMode === 'generated' ? generatedNodes : activeMode === 'custom' ? customNodes : []),
     [activeMode, customNodes, generatedNodes],
   );
 
   const activeNodeIds = useMemo(() => new Set(activeNodes.map(node => node.id)), [activeNodes]);
   const activeLinks = useMemo(
     () => {
-      const sourceLinks = activeMode === 'generated' ? generatedLinks : activeMode === 'custom' ? customLinks : DEFAULT_LINKS;
+      const sourceLinks = activeMode === 'generated' ? generatedLinks : activeMode === 'custom' ? customLinks : [];
       return sourceLinks.filter(link => activeNodeIds.has(link.source) && activeNodeIds.has(link.target));
     },
     [activeMode, activeNodeIds, customLinks, generatedLinks],
@@ -313,6 +313,7 @@ export function useLiveNetworkDataWithCustom() {
   const [selectedDestinations, setSelectedDestinations] = useState<string[]>([]);
   const [telemetryStatus, setTelemetryStatus] = useState<DashboardTelemetryStatus>('connecting');
   const [connectedSwitches, setConnectedSwitches] = useState<TelemetrySwitch[]>([]);
+  const [controllerFlows, setControllerFlows] = useState<TelemetryForwardedFlow[]>([]);
   const [lastTelemetryUpdate, setLastTelemetryUpdate] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const nodesRef = useRef(nodes);
@@ -328,6 +329,7 @@ export function useLiveNetworkDataWithCustom() {
     link.status,
   ])));
   const failureSnapshotRef = useRef(snapshotLinkFailures([]));
+  const seenControllerEventsRef = useRef(new Set<string>());
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -363,6 +365,7 @@ export function useLiveNetworkDataWithCustom() {
     setDestinationCount(0);
     setTelemetryStatus(activeMode === 'default' ? 'connecting' : 'unavailable');
     setConnectedSwitches([]);
+    setControllerFlows([]);
     setLastTelemetryUpdate(null);
     tickRef.current = 0;
     setTick(0);
@@ -403,6 +406,7 @@ export function useLiveNetworkDataWithCustom() {
   useEffect(() => {
     const transitions = linkFailureTransitions(failureSnapshotRef.current, links);
     failureSnapshotRef.current = transitions.snapshot;
+    if (activeMode === 'default') return;
     transitions.failed.forEach(link => {
       toast.error('Link marked failed', {
         description: `${linkEndpointNames(link, nodes)} is unavailable in the active topology.`,
@@ -413,7 +417,7 @@ export function useLiveNetworkDataWithCustom() {
         description: `${linkEndpointNames(link, nodes)} is available for simulated routing.`,
       });
     });
-  }, [links, nodes]);
+  }, [activeMode, links, nodes]);
 
   useEffect(() => {
     if (activeMode === 'default') return;
@@ -449,6 +453,7 @@ export function useLiveNetworkDataWithCustom() {
         const snapshot = await fetchTelemetrySnapshot();
         if (cancelled) return;
         setConnectedSwitches(snapshot.switches);
+        setControllerFlows(snapshot.flows);
         setTelemetryStatus(
           snapshot.health.statistics_received
             ? snapshot.health.data_status
@@ -458,13 +463,61 @@ export function useLiveNetworkDataWithCustom() {
         );
         setLastTelemetryUpdate(snapshot.summary?.last_statistics_update ?? null);
         setPortStats(openFlowPortStatsToDashboard(snapshot.ports));
-        setNodes(previous => previous.map(node => switchStatusForTelemetry(node, snapshot.switches)));
+        const detectedNodes: NetworkNode[] = snapshot.topology.nodes.map(node => ({
+          ...node,
+          type: node.type,
+          status: node.status === 'healthy' ? 'healthy' : 'warning',
+        }));
+        const detectedLinks: NetworkLink[] = snapshot.topology.links.map(link => ({
+          ...link,
+          status: link.status,
+        }));
+        setNodes(detectedNodes.map(node => switchStatusForTelemetry(node, snapshot.switches)));
+        baseLinksRef.current = detectedLinks;
+        linksRef.current = detectedLinks;
+        setLinks(detectedLinks);
+        const newEvents = snapshot.events.filter(event => !seenControllerEventsRef.current.has(event.id));
+        newEvents.forEach(event => seenControllerEventsRef.current.add(event.id));
+        newEvents.forEach(event => {
+          if (event.type === 'link_failed') {
+            const failedLabel = `${String(event.source)}–${String(event.target)}`;
+            toast.error(`Link ${failedLabel} failed`, {
+              description: 'Controller detected the failure; forwarding rules are being updated.',
+              id: event.id,
+            });
+          } else if (event.type === 'link_recovered') {
+            toast.success(`Link ${String(event.source)}–${String(event.target)} recovered`, {
+              description: 'Both endpoint ports were verified operational by the controller.',
+              id: event.id,
+            });
+          } else if (event.type === 'flow_rerouted') {
+            const oldPath = Array.isArray(event.old_path) ? event.old_path.join('–') : '';
+            const newPath = Array.isArray(event.new_path) ? event.new_path.join('–') : '';
+            const failedLink = typeof event.failed_link === 'string' ? event.failed_link : 'failed link';
+            toast.success(`Link ${failedLink} failed. Traffic rerouted through ${newPath}.`, {
+              description: oldPath ? `Previous route: ${oldPath}` : 'Controller installed the replacement route.',
+              id: event.id,
+            });
+            setRerouteEvents(previous => [{
+              id: event.id,
+              timestamp: new Date(event.timestamp),
+              source: String(event.source),
+              destination: String(event.destination),
+              reason: 'Link Failure',
+              oldPath: Array.isArray(event.old_path) ? event.old_path.map(String) : [],
+              newPath: Array.isArray(event.new_path) ? event.new_path.map(String) : [],
+            }, ...previous].slice(0, 12));
+          } else if (event.type === 'flow_blocked') {
+            toast.error('Link failed. No alternative path available; traffic blocked.', { id: event.id });
+          }
+        });
       } catch {
         if (!cancelled) {
           setTelemetryStatus('unavailable');
           setConnectedSwitches([]);
           setLastTelemetryUpdate(null);
           setPortStats([]);
+          setControllerFlows([]);
         }
       } finally {
         inFlight = false;
@@ -478,37 +531,6 @@ export function useLiveNetworkDataWithCustom() {
       window.clearInterval(interval);
     };
   }, [activeMode]);
-
-  useEffect(() => {
-    if (activeMode !== 'default') return;
-    const interval = window.setInterval(() => {
-      const now = Date.now();
-      const updated = packetFlowsRef.current
-        .map(flow => {
-          const reconciled = reconcilePacketFlowForFailures(flow, linksRef.current, now);
-          return reconciled.status === 'blocked'
-            ? reconciled
-            : { ...reconciled, progress: packetFlowProgress(reconciled, now) };
-        })
-        .filter(flow => flow.status === 'blocked' || flow.progress < 100);
-      const activePairs = new Set(updated.map(flow => `${flow.source}::${flow.destination}`));
-
-      selectedSources.forEach(source => {
-        selectedDestinations.forEach(destination => {
-          const pair = `${source}::${destination}`;
-          if (source === destination || activePairs.has(pair)) return;
-          const flow = createPacketFlow(source, destination, linksRef.current);
-          updated.push(flow);
-          activePairs.add(pair);
-        });
-      });
-
-      packetFlowsRef.current = updated;
-      setPacketFlows(updated);
-    }, 100);
-
-    return () => window.clearInterval(interval);
-  }, [activeMode, selectedDestinations, selectedSources, topologyKey]);
 
   useEffect(() => {
     if (activeMode === 'default') return;
@@ -634,6 +656,12 @@ export function useLiveNetworkDataWithCustom() {
     setSourceCount(sources.length);
     setDestinationCount(destinations.length);
 
+    if (activeMode === 'default') {
+      packetFlowsRef.current = [];
+      setPacketFlows([]);
+      return;
+    }
+
     const newFlows: PacketFlow[] = [];
     sources.forEach((src) => {
       destinations.forEach((dst) => {
@@ -652,9 +680,13 @@ export function useLiveNetworkDataWithCustom() {
 
   const getNetworkStats = () => ({
     totalNodes: nodes.length,
-    activeLinks: countPacketActiveLinks(links, packetFlows),
+    activeLinks: activeMode === 'default'
+      ? new Set(controllerFlows.filter(flow => flow.status === 'active').flatMap(flow =>
+        flow.path.slice(0, -1).map((dpid, index) => edgeKey(`switch-${dpid}`, `switch-${flow.path[index + 1]}`)),
+      )).size
+      : countPacketActiveLinks(links, packetFlows),
     congestedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'warning' || link.status === 'critical').length,
-    failedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'failed').length,
+    failedLinks: links.filter(link => link.status === 'failed').length,
     maxTraffic: Math.max(...links.map(link => link.trafficLevel), 0),
     avgTraffic: links.length > 0 ? links.reduce((sum, link) => sum + link.trafficLevel, 0) / links.length : 0,
     activeNodes: activeMode === 'default' ? connectedSwitches.length : nodes.filter(node => node.status === 'healthy').length,
@@ -679,6 +711,7 @@ export function useLiveNetworkDataWithCustom() {
     telemetryTick: tick,
     telemetryStatus,
     connectedSwitches,
+    controllerFlows,
     lastTelemetryUpdate,
   };
 }

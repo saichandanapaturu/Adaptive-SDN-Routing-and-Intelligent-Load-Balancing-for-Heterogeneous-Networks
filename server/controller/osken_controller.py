@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""AIFE SDN control-plane foundation.
-
-This step intentionally handles only switch discovery/lifecycle and the
-OpenFlow 1.3 table-miss rule. Statistics, prediction, traffic generation, and
-routing intelligence are intentionally deferred to later steps.
-"""
+"""AIFE OpenFlow 1.3 controller, topology discovery, forwarding, and telemetry."""
 
 import logging
 from typing import Dict
@@ -13,8 +8,18 @@ from os_ken.base import app_manager
 from os_ken.controller import ofp_event
 from os_ken.controller.handler import CONFIG_DISPATCHER, DEAD_DISPATCHER, MAIN_DISPATCHER
 from os_ken.controller.handler import set_ev_cls
+from os_ken.cfg import CONF
 from os_ken.lib import hub
 from os_ken.ofproto import ofproto_v1_3
+from os_ken.topology import event as topology_event
+from os_ken.topology import switches as topology_switches
+
+CONF.set_default("observe_links", True)
+
+try:
+    from server.controller.forwarding import AIFEForwarding
+except ImportError:
+    from forwarding import AIFEForwarding
 
 try:
     from server.controller.statistics import OpenFlowStatisticsCollector
@@ -29,6 +34,7 @@ except ImportError:
 LOG = logging.getLogger("aife.osken_controller")
 
 
+app_manager.require_app(topology_switches.__name__)
 class AIFEController(app_manager.OSKenApp):
     """Minimal OS-Ken application for the AIFE OpenFlow control plane."""
 
@@ -37,9 +43,16 @@ class AIFEController(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.connected_switches: Dict[int, object] = {}
+        self.forwarding = AIFEForwarding(self.connected_switches)
         self.statistics = OpenFlowStatisticsCollector()
         self.telemetry_service = TelemetryService(
-            TelemetryApiState(self.statistics, self._switch_snapshot)
+            TelemetryApiState(
+                self.statistics,
+                self._switch_snapshot,
+                self.forwarding.topology_snapshot,
+                self.forwarding.events_snapshot,
+                self.forwarding.forwarding_snapshot,
+            )
         )
         self.telemetry_service.start()
         self._stats_thread = hub.spawn(self._poll_port_statistics)
@@ -78,6 +91,7 @@ class AIFEController(app_manager.OSKenApp):
         self.connected_switches[dpid] = datapath
         LOG.info("Switch connected: dpid=%016x", dpid)
         self._install_table_miss(datapath)
+        hub.spawn(self._refresh_switch_state, datapath)
 
     @set_ev_cls(ofp_event.EventOFPStateChange, [MAIN_DISPATCHER, DEAD_DISPATCHER])
     def switch_state_change_handler(self, ev):
@@ -89,9 +103,20 @@ class AIFEController(app_manager.OSKenApp):
             if self.connected_switches.get(dpid) is not datapath:
                 self.connected_switches[dpid] = datapath
                 LOG.info("Switch entered main dispatcher: dpid=%016x", dpid)
+                hub.spawn(self._refresh_switch_state, datapath)
         elif ev.state == DEAD_DISPATCHER:
             if self.connected_switches.pop(dpid, None) is not None:
                 LOG.info("Switch disconnected: dpid=%016x", dpid)
+                hub.spawn(self.forwarding.switch_disconnected, dpid)
+
+    @staticmethod
+    def _request_port_descriptions(datapath):
+        request = datapath.ofproto_parser.OFPPortDescStatsRequest(datapath, 0)
+        datapath.send_msg(request)
+
+    def _refresh_switch_state(self, datapath):
+        if self.forwarding.clear_datapath_rules(datapath):
+            self._request_port_descriptions(datapath)
 
     def _install_table_miss(self, datapath):
         """Send unmatched packets to the controller without buffering them."""
@@ -139,6 +164,35 @@ class AIFEController(app_manager.OSKenApp):
                 sample.rx_dropped,
                 sample.tx_dropped,
             )
+
+    @set_ev_cls(topology_event.EventLinkAdd)
+    def link_add_handler(self, ev):
+        hub.spawn(self.forwarding.link_added, ev.link)
+
+    @set_ev_cls(topology_event.EventLinkDelete)
+    def link_delete_handler(self, ev):
+        hub.spawn(self.forwarding.link_deleted, ev.link)
+
+    @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
+    def port_status_handler(self, ev):
+        deleted = ev.msg.reason == ev.msg.datapath.ofproto.OFPPR_DELETE
+        hub.spawn(self.forwarding.port_status, ev.msg.datapath, ev.msg.desc, deleted=deleted)
+
+    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
+    def port_description_reply_handler(self, ev):
+        hub.spawn(self.forwarding.port_descriptions, ev.msg.datapath, ev.msg.body)
+
+    @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
+    def packet_in_handler(self, ev):
+        hub.spawn(self.forwarding.packet_in, ev)
+
+    @set_ev_cls(ofp_event.EventOFPBarrierReply, MAIN_DISPATCHER)
+    def barrier_reply_handler(self, ev):
+        self.forwarding.barrier_reply(ev)
+
+    @set_ev_cls(ofp_event.EventOFPErrorMsg, MAIN_DISPATCHER)
+    def openflow_error_handler(self, ev):
+        self.forwarding.openflow_error(ev)
 
 
 if __name__ == "__main__":

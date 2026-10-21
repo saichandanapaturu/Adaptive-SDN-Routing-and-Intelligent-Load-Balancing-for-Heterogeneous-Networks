@@ -38,6 +38,10 @@ function mockJson(...bodies: unknown[]) {
   return fetchMock;
 }
 
+const controllerTopology = { nodes: [], links: [] };
+const controllerEvents = { events: [] };
+const controllerForwarding = { flows: [] };
+
 describe('fetchTelemetrySnapshot', () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -45,6 +49,9 @@ describe('fetchTelemetrySnapshot', () => {
     const fetchMock = mockJson(
       health(),
       { switches: [{ dpid: 1, status: 'connected' }] },
+      controllerTopology,
+      controllerEvents,
+      controllerForwarding,
       { data_status: 'fresh', ports: [port] },
       {
         switches_connected: 1,
@@ -60,24 +67,33 @@ describe('fetchTelemetrySnapshot', () => {
     const snapshot = await fetchTelemetrySnapshot({ baseUrl: 'http://127.0.0.1:8765' });
     expect(snapshot.ports[0].rx_byte_rate).toBe(300);
     expect(snapshot.switches[0].dpid).toBe(1);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(snapshot.topology).toEqual(controllerTopology);
+    expect(snapshot.events).toEqual([]);
+    expect(snapshot.flows).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
   });
 
   it('does not request or fabricate ports when the controller awaits its first sample', async () => {
     const fetchMock = mockJson(
       health({ statistics_received: false, data_status: 'unavailable' }),
       { switches: [{ dpid: 1, status: 'connected' }] },
+      controllerTopology,
+      controllerEvents,
+      controllerForwarding,
     );
     const snapshot = await fetchTelemetrySnapshot({ baseUrl: 'http://127.0.0.1:8765' });
     expect(snapshot.ports).toEqual([]);
     expect(snapshot.summary).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
   it('preserves stale status from the backend', async () => {
     mockJson(
       health({ data_status: 'stale' }),
       { switches: [{ dpid: 1, status: 'connected' }] },
+      controllerTopology,
+      controllerEvents,
+      controllerForwarding,
       { data_status: 'stale', ports: [port] },
       {
         switches_connected: 1,

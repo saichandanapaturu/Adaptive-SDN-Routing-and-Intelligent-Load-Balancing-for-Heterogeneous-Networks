@@ -16,6 +16,10 @@ export interface NetworkLink {
   bandwidth: number; // MB/s
   trafficLevel: number; // 0-100
   status: 'healthy' | 'warning' | 'critical' | 'failed';
+  source_port?: number;
+  target_port?: number;
+  origin?: 'detected' | 'manual' | 'simulated';
+  reason?: string;
 }
 
 export interface PortStat {
@@ -56,6 +60,7 @@ export interface PacketFlow {
   duration: number;
   status?: 'active' | 'blocked';
   blockedReason?: string;
+  origin?: 'controller' | 'simulated';
 }
 
 const NODES: NetworkNode[] = [

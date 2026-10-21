@@ -63,6 +63,7 @@ export default function Home() {
     telemetryTick,
     telemetryStatus,
     connectedSwitches,
+    controllerFlows,
     lastTelemetryUpdate,
   } = useLiveNetworkDataWithCustom();
 
@@ -75,7 +76,9 @@ export default function Home() {
   } = useTopologyContext();
 
   const stats = getNetworkStats();
-  const blockedPacketFlowCount = packetFlows.filter(flow => flow.status === 'blocked').length;
+  const blockedPacketFlowCount = activeMode === 'default'
+    ? controllerFlows.filter(flow => flow.status === 'blocked').length
+    : packetFlows.filter(flow => flow.status === 'blocked').length;
   const activePeakHour = activePeakHourAt(peakHours, simulatedMinute);
   const simulatedTime = `${String(Math.floor(simulatedMinute / 60) % 24).padStart(2, '0')}:${String(simulatedMinute % 60).padStart(2, '0')}`;
   const [activeTab, setActiveTab] = useState('monitor');
@@ -399,7 +402,7 @@ export default function Home() {
                           ? 'Configured topology visualization; OpenFlow mapping is not verified for generated nodes.'
                           : hasCustomTopology
                             ? 'Configured custom topology; OpenFlow mapping is not verified for custom nodes.'
-                            : 'OpenFlow port telemetry when the OS-Ken controller is connected; physical link mapping is pending.'}
+                            : 'Controller-discovered links and installed forwarding state. Live controller flows are not animated.'}
                       </CardDescription>
                       {activePeakHour && (
                         <p role="status" className="mt-2 font-mono text-[11px] uppercase tracking-wider text-amber-200">
@@ -417,7 +420,7 @@ export default function Home() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Multi-Source & Multi-Destination Dropdown Configuration */}
-                  <div className="space-y-4 rounded-xl border border-white/10 bg-slate-950/40 p-4">
+                  {activeMode !== 'default' && <div className="space-y-4 rounded-xl border border-white/10 bg-slate-950/40 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Multi-Path Parallel Packet Flow</p>
@@ -490,7 +493,7 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Topology Canvas */}
                   <ImprovedNetworkTopology
@@ -501,6 +504,22 @@ export default function Home() {
                     selectedDestinations={selectedDestinations}
                     onNodeSelect={handleNodeSelect}
                   />
+
+                  {activeMode === 'default' && controllerFlows.length > 0 && (
+                    <div className="space-y-2" aria-label="Controller forwarding state">
+                      <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Controller forwarding</p>
+                      <div className="divide-y divide-white/[0.06] rounded-lg border border-white/10 bg-slate-950/30">
+                        {controllerFlows.map(flow => (
+                          <div key={`${flow.source_mac}>${flow.destination_mac}`} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 font-mono text-xs">
+                            <span className="text-slate-300">{flow.source_mac} → {flow.destination_mac}</span>
+                            <span className={flow.status === 'active' ? 'text-emerald-300' : 'text-red-300'}>
+                              {flow.status === 'active' ? flow.path.map(dpid => `s${dpid}`).join(' → ') : `Blocked · ${flow.blocked_reason ?? 'unreachable'}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Legend */}
                   <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-6 border-t border-slate-800">

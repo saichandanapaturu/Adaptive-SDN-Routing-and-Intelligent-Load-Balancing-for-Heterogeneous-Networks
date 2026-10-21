@@ -222,7 +222,7 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
 
       const positions = buildLayout(nodes, width, height);
       const routeEdges = new Set<string>();
-      const visibleFlows = packetFlows.filter(flow => canAnimatePacketFlow(flow, links));
+      const visibleFlows = packetFlows.filter(flow => flow.origin !== 'controller' && canAnimatePacketFlow(flow, links));
       visibleFlows.forEach(flow => {
         flow.path.forEach((nodeId, index) => {
           if (index < flow.path.length - 1) {

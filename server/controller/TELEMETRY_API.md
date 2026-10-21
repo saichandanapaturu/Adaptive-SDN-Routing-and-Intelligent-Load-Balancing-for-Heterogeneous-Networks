@@ -11,7 +11,7 @@ The telemetry API is served by the same Python process as the OS-Ken controller.
 - Override with `AIFE_TELEMETRY_HOST` (loopback only) and `AIFE_TELEMETRY_PORT`.
 - Freshness threshold: 5 seconds by default; the current implementation reports stale data rather than pretending it is live.
 
-The Express server continues to serve the existing dashboard separately. The dashboard is not connected to this API in this step.
+The Express server continues to serve the dashboard separately. In default live mode the dashboard consumes controller-discovered topology, controller events, installed flow status, and OpenFlow counters from this API. It does not animate or fabricate controller packet delivery. Custom/generated modes remain frontend simulations and are labeled as configured topologies.
 
 ## Start the integrated dashboard
 
@@ -58,7 +58,11 @@ sudo mnexec -a "$(pgrep -f 'mininet:.*h1' | head -n1)" ping -c 3 10.0.0.3
 # Or use the Mininet CLI: h1 ping -c 3 h3
 ```
 
-The controller requests OpenFlow 1.3 port counters once per second. Use `ping` or `iperf` to make counters change.
+The controller enables OS-Ken's `observe_links` option (disabled by default) and uses topology discovery (`EventLinkAdd`/`EventLinkDelete`), OpenFlow 1.3 port status and port-description state, and switch lifecycle events. A link is routable only after both endpoint ports are verified up. Link deletion, port down/deletion, or switch disconnection marks it failed. A re-discovered link remains failed until fresh port reports confirm both sides up.
+
+The controller learns hosts from packet source MAC addresses, floods initial/unknown-destination frames only to verified host-facing ports, computes simple paths over operational switch links, installs cookie-scoped OpenFlow rules, and waits for barriers before releasing the first packet. Failure handling removes AIFE rules, waits for barriers, then installs replacement routes; flows are reported blocked when no path exists or installation cannot be confirmed. Congestion and frontend prediction do not set physical link state.
+
+The controller requests OpenFlow 1.3 port counters once per second. Use `ping` or `iperf` to make counters change. In the Mininet CLI, `link s1 s2 down` causes a detected fabric-link failure and `link s1 s2 up` restores it after both ports are verified operational.
 
 ## Endpoints
 
@@ -88,6 +92,12 @@ curl http://127.0.0.1:8765/api/telemetry/summary
 {"switches":[{"dpid":1,"status":"connected"}]}
 ```
 
+`GET /api/telemetry/topology` returns the controller's discovered switches, learned hosts, and links. Link `status` is `healthy`, `warning` (discovery pending/unverified), or `failed`; detected physical links include both endpoint port numbers and `origin: "detected"`.
+
+`GET /api/telemetry/events` returns recent controller events with stable IDs unique to the controller process. Event types include `link_failed`, `link_recovered`, `flow_rerouted`, and `flow_blocked`; reroute events are emitted only after replacement forwarding rules are barrier-confirmed.
+
+`GET /api/telemetry/forwarding` returns learned MAC-pair flows and their current status/path. An `active` flow means its OpenFlow rules were installed and acknowledged; it is not a frontend animation.
+
 `GET /api/telemetry/ports` returns the latest non-local port samples. It includes cumulative counters and elapsed-time rates: `dpid`, `port_no`, `timestamp`, RX/TX packets, bytes, errors, dropped packets, and RX/TX packet/byte rates. `OFPP_LOCAL` (`4294967294`) is excluded. If no OpenFlow reply has been received yet, it returns HTTP `503` with `statistics_unavailable`.
 
 `GET /api/telemetry/summary` returns totals derived only from the latest collected samples:
@@ -115,4 +125,4 @@ Run deterministic API tests from the project root:
 python3 -m unittest server.controller.test_telemetry_api -v
 ```
 
-These tests use fixed mock counter objects to validate response shape, local-port filtering, rate calculations, stale data, empty state, and summary aggregation. They are not live Mininet/OVS/OS-Ken integration tests.
+These tests use fixed mock counter objects and state providers to validate response shape, local-port filtering, rate calculations, stale data, empty state, topology/event/forwarding endpoints, and summary aggregation. Routing and controller state tests use deterministic link and fake datapath objects; they are not live Mininet/OVS/OS-Ken integration tests.
