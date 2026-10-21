@@ -100,6 +100,7 @@ function pathCost(path: string[], links: NetworkLink[], predictedPenalty: number
   return path.slice(0, -1).reduce((total, node, index) => {
     const next = path[index + 1];
     const link = links.find(item => edgeKey(item.source, item.target) === edgeKey(node, next));
+    if (link?.status === 'critical') return Number.POSITIVE_INFINITY;
     return total + (link ? 1 + link.trafficLevel / 22 + predictedPenalty / 100 : 1000);
   }, 0);
 }
@@ -111,7 +112,7 @@ function findPath(source: string, destination: string, links: NetworkLink[], blo
     const current = queue.shift();
     if (!current) break;
     if (current.node === destination) return current.path;
-    links.filter(link => !blocked.has(edgeKey(link.source, link.target)) && (link.source === current.node || link.target === current.node)).forEach(link => {
+    links.filter(link => link.status !== 'critical' && !blocked.has(edgeKey(link.source, link.target)) && (link.source === current.node || link.target === current.node)).forEach(link => {
       const next = link.source === current.node ? link.target : link.source;
       if (!visited.has(next)) {
         visited.add(next);

@@ -1,6 +1,7 @@
 /* Style: AIFE topology renderer — high-contrast NOC canvas, crisp instrument lines, mono labels, emerald active state, cyan packet flow. */
 import React, { useEffect, useRef } from 'react';
 import { NetworkNode, NetworkLink, PacketFlow } from '@/hooks/useLiveNetworkData';
+import { linkVisualState, pathUsesFailedLink } from '@/lib/failedLinkRouting';
 
 interface ImprovedNetworkTopologyProps {
   nodes: NetworkNode[];
@@ -229,22 +230,24 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
         const sourcePos = positions.get(link.source);
         const targetPos = positions.get(link.target);
         if (!sourcePos || !targetPos) return;
-        const color = statusColor(link.status);
         const routeEdge = routeEdges.has(`${link.source}::${link.target}`);
+        const color = statusColor(link.status);
+        const visualState = linkVisualState(link, routeEdge);
+        const failed = visualState.priority === 'failed';
         const traffic = clamp(link.trafficLevel, 0, 100);
-        const lineWidth = routeEdge ? 4 : 1.5 + traffic * 0.025;
+        const lineWidth = failed ? 2.5 : routeEdge ? 4 : 1.5 + traffic * 0.025;
 
         ctx.save();
         ctx.lineCap = 'round';
-        ctx.setLineDash(link.status === 'critical' ? [8, 6] : link.status === 'warning' ? [4, 4] : []);
+        ctx.setLineDash(failed ? [8, 6] : link.status === 'warning' ? [4, 4] : []);
         ctx.strokeStyle = 'rgba(2, 6, 23, 0.95)';
         ctx.lineWidth = lineWidth + 5;
         ctx.beginPath();
         ctx.moveTo(sourcePos.x, sourcePos.y);
         ctx.lineTo(targetPos.x, targetPos.y);
         ctx.stroke();
-        ctx.strokeStyle = routeEdge ? COLORS.cyan : color;
-        ctx.globalAlpha = routeEdge ? 0.95 : 0.72 + traffic / 360;
+        ctx.strokeStyle = failed ? visualState.color : routeEdge ? COLORS.cyan : color;
+        ctx.globalAlpha = failed ? 1 : routeEdge ? 0.95 : 0.72 + traffic / 360;
         ctx.lineWidth = lineWidth;
         ctx.beginPath();
         ctx.moveTo(sourcePos.x, sourcePos.y);
@@ -254,7 +257,7 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
 
         const midX = (sourcePos.x + targetPos.x) / 2;
         const midY = (sourcePos.y + targetPos.y) / 2;
-        drawPill(ctx, `${traffic.toFixed(0)}%`, midX, midY, routeEdge ? COLORS.cyan : color, { fontSize: 10 });
+        drawPill(ctx, failed ? visualState.label : `${traffic.toFixed(0)}%`, midX, midY, failed ? visualState.color : routeEdge ? COLORS.cyan : color, { fontSize: 10 });
       });
 
       // Nodes use hard-edged instrument rings and a geometric glyph for clarity.
@@ -314,6 +317,7 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
       // Packets remain bright and precise without a large shadow blur that makes the canvas look soft.
       packetFlows.forEach(flow => {
         if (flow.path.length < 2) return;
+        if (pathUsesFailedLink(flow.path, links)) return;
         // Use wall-clock progress for smooth movement between telemetry ticks.
         // React supplies new flows roughly once per second; the canvas now
         // interpolates their position on every animation frame.

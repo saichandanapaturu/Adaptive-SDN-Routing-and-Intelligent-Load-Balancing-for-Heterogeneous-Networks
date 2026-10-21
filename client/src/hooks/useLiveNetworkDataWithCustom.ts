@@ -10,6 +10,8 @@ import {
   PacketFlow,
 } from './useLiveNetworkData';
 import { fetchTelemetrySnapshot, TelemetryDataStatus, TelemetrySwitch } from '@/lib/telemetryApi';
+import { edgeKey as sharedEdgeKey, failureTransitions, findAvailablePath, pathUsesFailedLink } from '@/lib/failedLinkRouting';
+import { toast } from 'sonner';
 
 export type DashboardTelemetryStatus = TelemetryDataStatus | 'connecting' | 'awaiting-statistics';
 
@@ -130,11 +132,11 @@ function findPath(
       }));
 
     neighbors.forEach(({ link, neighbor }) => {
-      if (avoidEdges.has(edgeKey(link.source, link.target))) return;
+      if (link.status === 'critical' || avoidEdges.has(edgeKey(link.source, link.target))) return;
 
       const isIntermediate = neighbor !== destination && neighbor !== source;
       const nodeTypeBonus = isIntermediate ? 0.3 : 0; // encourage routing through core switches and routers
-      const statusPenalty = link.status === 'critical' ? 300 : link.status === 'warning' ? 35 : 0;
+      const statusPenalty = link.status === 'warning' ? 35 : 0;
       const forecastPenalty = predictionDriven && link.trafficLevel >= 50 ? 40 : 0;
       const linkCost = 1 + link.trafficLevel / 18 + statusPenalty + forecastPenalty - nodeTypeBonus;
       const nextCost = current.cost + Math.max(0.1, linkCost);
@@ -331,6 +333,8 @@ export function useLiveNetworkDataWithCustom() {
   const [connectedSwitches, setConnectedSwitches] = useState<TelemetrySwitch[]>([]);
   const [lastTelemetryUpdate, setLastTelemetryUpdate] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const failedEdgesRef = useRef<Set<string>>(new Set());
+  const failureTopologyRef = useRef<string>('');
   const nodesRef = useRef(nodes);
   const linksRef = useRef(links);
   const packetFlowsRef = useRef<PacketFlow[]>([]);
@@ -351,7 +355,7 @@ export function useLiveNetworkDataWithCustom() {
       trafficLevel: 0,
       status: activeMode === 'default' && node.type === 'switch' ? 'warning' : 'healthy',
     })));
-    setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0, status: 'healthy' })));
+    setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0, status: link.status })));
     setPortStats(activeMode === 'default' ? [] : buildPortStats(activeNodes, activeLinks));
     setRerouteEvents([]);
     const resetPredictions = activeMode === 'default' ? [] : [buildPrediction(activeLinks)];
@@ -369,6 +373,27 @@ export function useLiveNetworkDataWithCustom() {
     tickRef.current = 0;
     setTick(0);
   }, [topologyKey, activeLinks, activeNodes]);
+
+  useEffect(() => {
+    if (failureTopologyRef.current !== topologyKey) {
+      failedEdgesRef.current = new Set(activeLinks.filter(link => link.status === 'critical').map(link => sharedEdgeKey(link.source, link.target)));
+      failureTopologyRef.current = topologyKey;
+      return;
+    }
+
+    const currentFailed = new Set(links.filter(link => link.status === 'critical').map(link => sharedEdgeKey(link.source, link.target)));
+    const labels = new Map(nodes.map(node => [node.id, node.label]));
+    const transitions = failureTransitions(failedEdgesRef.current, currentFailed);
+    transitions.failed.forEach(edge => {
+      const [source, target] = edge.split('::');
+      toast.error(`Link failed: ${labels.get(source) ?? source} ↔ ${labels.get(target) ?? target}`, { id: `link-failed-${edge}` });
+    });
+    transitions.restored.forEach(edge => {
+      const [source, target] = edge.split('::');
+      toast.success(`Link restored: ${labels.get(source) ?? source} ↔ ${labels.get(target) ?? target}`, { id: `link-restored-${edge}` });
+    });
+    failedEdgesRef.current = currentFailed;
+  }, [activeLinks, links, topologyKey]);
 
   useEffect(() => {
     if (activeMode !== 'default') return;
@@ -456,6 +481,16 @@ export function useLiveNetworkDataWithCustom() {
       const reroutes: RerouteEvent[] = [];
       const updated = packetFlowsRef.current
         .map(flow => {
+          if (pathUsesFailedLink(flow.path, nextLinks)) {
+            const alternatePath = findAvailablePath(flow.source, flow.destination, nextLinks);
+            if (alternatePath.length > 1) {
+              reroutes.push(rerouteEventForFlow(flow, alternatePath, nextNodes, 'Link Failure'));
+              return { ...flow, path: alternatePath, progress: 0, startTime: now };
+            }
+            reroutes.push(rerouteEventForFlow(flow, [], nextNodes, 'No Route Available'));
+            return null;
+          }
+
           const progress = clamp(((now - flow.startTime) / flow.duration) * 100);
           if (progress >= 100) return null;
 
@@ -544,7 +579,7 @@ export function useLiveNetworkDataWithCustom() {
 
   const getNetworkStats = () => ({
     totalNodes: nodes.length,
-    activeLinks: countPacketActiveLinks(links, packetFlows),
+    activeLinks: countPacketActiveLinks(links, packetFlows.filter(flow => !pathUsesFailedLink(flow.path, links))),
     congestedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'warning' || link.status === 'critical').length,
     failedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'critical').length,
     maxTraffic: Math.max(...links.map(link => link.trafficLevel), 0),
