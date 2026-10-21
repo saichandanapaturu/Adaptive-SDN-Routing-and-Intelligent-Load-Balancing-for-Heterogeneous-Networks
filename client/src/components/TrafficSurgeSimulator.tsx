@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, AlertTriangle, BrainCircuit, CirclePause, Play, Plus, RotateCcw, Route, Sparkles, TimerReset, Trash2, Zap } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { NetworkLink, NetworkNode } from '@/hooks/useLiveNetworkData';
+import type { NetworkLink, NetworkNode, RerouteEvent } from '@/hooks/useLiveNetworkData';
 import { useTrafficSurgeSimulator, type TrafficState } from '@/hooks/useTrafficSurgeSimulator';
 import { useTopologyContext } from '@/contexts/TopologyContext';
 import { addPeakHour, isValidPeakHourPeriod, peakHourDurationMinutes, removePeakHour, updatePeakHour } from '@/lib/peakHours';
@@ -9,6 +9,7 @@ import { addPeakHour, isValidPeakHourPeriod, peakHourDurationMinutes, removePeak
 interface TrafficSurgeSimulatorProps {
   nodes: NetworkNode[];
   links: NetworkLink[];
+  onReroute?: (event: RerouteEvent) => void;
 }
 
 const edgeKey = (source: string, target: string) => [source, target].sort().join('::');
@@ -33,8 +34,8 @@ function pathLabel(path: string[], nodes: NetworkNode[]) {
   return path.length ? path.map(node => labels.get(node) ?? node).join(' → ') : 'No connected path';
 }
 
-export function TrafficSurgeSimulator({ nodes, links }: TrafficSurgeSimulatorProps) {
-  const simulator = useTrafficSurgeSimulator(nodes, links);
+export function TrafficSurgeSimulator({ nodes, links, onReroute }: TrafficSurgeSimulatorProps) {
+  const simulator = useTrafficSurgeSimulator(nodes, links, onReroute);
   const { peakHours, setPeakHours } = useTopologyContext();
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const maxHistory = Math.max(100, ...simulator.history.map(point => point.intensity));

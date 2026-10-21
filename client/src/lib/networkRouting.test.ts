@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NetworkLink, NetworkNode, PacketFlow } from '@/hooks/useLiveNetworkData';
 import {
   canAnimatePacketFlow,
+  congestionReroutePath,
   findAvailablePath,
   linkEndpointNames,
   linkFailureTransitions,
@@ -121,5 +122,49 @@ describe('failed-link notifications', () => {
     const failedLinks = [link('a', 'b', 'failed'), link('b', 'c', 'failed')];
     const transitions = linkFailureTransitions(snapshotLinkFailures([]), failedLinks);
     expect(transitions.failed).toHaveLength(2);
+  });
+});
+
+describe('congestion rerouting', () => {
+  const loaded = (source: string, target: string, trafficLevel: number): NetworkLink => ({
+    source,
+    target,
+    bandwidth: 10,
+    trafficLevel,
+    status: trafficLevel >= 86 ? 'critical' : trafficLevel >= 68 ? 'warning' : 'healthy',
+  });
+  const hostFlow = (path: string[]): PacketFlow => ({ ...flow(path), source: 'h1', destination: 'h2' });
+  // h1 and h2 each have a single access link, as hosts do in every topology mode.
+  const diamond = (s1s2: number, s1s3 = 10, s3s4 = 10) => [
+    loaded('h1', 's1', 20), loaded('s1', 's2', s1s2), loaded('s2', 's4', 15),
+    loaded('s1', 's3', s1s3), loaded('s3', 's4', s3s4), loaded('s4', 'h2', 20),
+  ];
+
+  it('reroutes around a congested link while keeping single host access links', () => {
+    const reroute = congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), diamond(95));
+    expect(reroute).toEqual({ path: ['h1', 's1', 's3', 's4', 'h2'], reason: 'Congestion Detected' });
+  });
+
+  it('does not reroute an uncongested path', () => {
+    expect(congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), diamond(30))).toBeNull();
+  });
+
+  it('does not move traffic onto an equally congested alternate', () => {
+    expect(congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), diamond(90, 95))).toBeNull();
+  });
+
+  it('reports no reroute when the congested link is the only way out', () => {
+    const links = diamond(10).map(item => (item.source === 'h1' ? loaded('h1', 's1', 97) : item));
+    expect(congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), links)).toBeNull();
+  });
+
+  it('uses forecast pressure to pre-emptively balance a busy but uncongested link', () => {
+    const reroute = congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), diamond(60), true);
+    expect(reroute).toEqual({ path: ['h1', 's1', 's3', 's4', 'h2'], reason: 'Load Balancing' });
+  });
+
+  it('never routes through a failed link', () => {
+    const links = diamond(95).map(item => (item.source === 's1' && item.target === 's3' ? { ...item, status: 'failed' as const } : item));
+    expect(congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), links)).toBeNull();
   });
 });

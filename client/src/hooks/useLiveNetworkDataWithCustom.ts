@@ -19,6 +19,7 @@ import {
 } from '@/lib/telemetryApi';
 import { applyPeakHourSchedule } from '@/lib/peakHours';
 import {
+  congestionReroutePath,
   findAvailablePath,
   linkEndpointNames,
   linkFailureTransitions,
@@ -551,7 +552,6 @@ export function useLiveNetworkDataWithCustom() {
       setTick(tickRef.current);
 
       const now = Date.now();
-      const linkByEdge = new Map(nextLinks.map(link => [edgeKey(link.source, link.target), link]));
       const predictionPressure = nextPrediction.predictedCongestion >= 62
         || nextPrediction.predictedPacketLoss >= 1.4
         || nextPrediction.trend === 'increasing';
@@ -567,33 +567,16 @@ export function useLiveNetworkDataWithCustom() {
           const progress = packetFlowProgress(currentFlow, now);
           if (progress >= 100) return null;
 
-          const currentEdges = pathEdgeKeys(currentFlow.path);
-          const routeHasPressure = currentEdges.some(key => {
-            const link = linkByEdge.get(key);
-            return Boolean(link && (link.trafficLevel >= 68 || link.status !== 'healthy'));
-          });
-          const shouldReroute = routeHasPressure || (predictionPressure && currentEdges.some(key => {
-            const link = linkByEdge.get(key);
-            return Boolean(link && link.trafficLevel >= 52);
-          }));
-
-          if (shouldReroute) {
-            const alternatePath = findAvailablePath(currentFlow.source, currentFlow.destination, nextLinks, new Set(currentEdges), true);
-            if (alternatePath.length > 1 && !pathsEqual(alternatePath, currentFlow.path)) {
-              reroutes.push(rerouteEventForFlow(
-                currentFlow,
-                alternatePath,
-                nextNodes,
-                predictionPressure ? 'Load Balancing' : 'Congestion Detected',
-              ));
-              return {
-                ...currentFlow,
-                path: alternatePath,
-                progress: 0,
-                startTime: now,
-                status: 'active',
-              };
-            }
+          const reroute = congestionReroutePath(currentFlow, nextLinks, predictionPressure);
+          if (reroute) {
+            reroutes.push(rerouteEventForFlow(currentFlow, reroute.path, nextNodes, reroute.reason));
+            return {
+              ...currentFlow,
+              path: reroute.path,
+              progress: 0,
+              startTime: now,
+              status: 'active',
+            };
           }
 
           return { ...currentFlow, progress };
@@ -621,6 +604,14 @@ export function useLiveNetworkDataWithCustom() {
 
     return () => window.clearInterval(interval);
   }, [activeMode, selectedDestinations, selectedSources, topologyKey]);
+
+  // Reroutes decided by the Traffic Surge Simulator. Its traffic is synthetic,
+  // so it is logged only for configured (custom/generated) topologies, never
+  // alongside controller events in default live mode.
+  const recordSimulatedReroute = (event: RerouteEvent) => {
+    if (activeMode === 'default') return;
+    setRerouteEvents(previous => [event, ...previous].slice(0, 12));
+  };
 
   const updateMultiRoutes = (sources: string[], destinations: string[]) => {
     setSelectedSources(sources);
@@ -676,6 +667,7 @@ export function useLiveNetworkDataWithCustom() {
     sourceCount,
     destinationCount,
     updateMultiRoutes,
+    recordSimulatedReroute,
     getNetworkStats,
     hasCustomTopology,
     hasGeneratedTopology,

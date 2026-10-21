@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { NetworkLink, NetworkNode } from '@/hooks/useLiveNetworkData';
+import type { NetworkLink, NetworkNode, RerouteEvent } from '@/hooks/useLiveNetworkData';
 import { useTopologyContext } from '@/contexts/TopologyContext';
 import { activePeakHourAt, nextPeakHour, PeakHourPeriod } from '@/lib/peakHours';
 import { findAvailablePath, networkEdgeKey } from '@/lib/networkRouting';
@@ -115,8 +115,15 @@ function buildInitialRouting(nodes: NetworkNode[], links: NetworkLink[]): SurgeR
   return { currentPath, recommendedPath: currentPath, currentCost: pathCost(currentPath, links, 0), recommendedCost: pathCost(currentPath, links, 0), reason: 'Monitoring baseline traffic.', action: 'MONITOR' };
 }
 
-export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLink[]) {
+export function useTrafficSurgeSimulator(
+  nodes: NetworkNode[],
+  links: NetworkLink[],
+  onReroute?: (event: RerouteEvent) => void,
+) {
   const { peakHours, simulatedMinute, setSimulatedMinute } = useTopologyContext();
+  // A ref keeps the interval effect from restarting when the callback identity changes.
+  const onRerouteRef = useRef(onReroute);
+  onRerouteRef.current = onReroute;
   const [scenario, setScenario] = useState<Scenario>('random');
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -266,7 +273,19 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
         const message = nextState === 'SUDDEN SURGE' || nextState === 'FLASH CROWD' ? `${nextState} detected on ${affectedLink?.source ?? 'targeted'} → ${affectedLink?.target ?? 'flow'}.` : `${nextState} phase entered.`;
         addEvent(message, nextState === 'NORMAL' ? 'success' : nextState === 'RECOVERY' ? 'neutral' : 'warning');
       }
-      if (shouldReroute && action === 'REROUTE' && routing.action !== 'REROUTE') addEvent('AIFE recommends alternate path after rapidly increasing utilization.', 'critical');
+      if (shouldReroute && action === 'REROUTE' && routing.action !== 'REROUTE') {
+        addEvent('AIFE recommends alternate path after rapidly increasing utilization.', 'critical');
+        const labels = new Map(nodes.map(node => [node.id, node.label]));
+        onRerouteRef.current?.({
+          id: `surge-reroute-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: new Date(),
+          source: labels.get(source) ?? source,
+          destination: labels.get(destination) ?? destination,
+          reason: 'Congestion Detected',
+          oldPath: currentPath.map(id => labels.get(id) ?? id),
+          newPath: recommendedPath.map(id => labels.get(id) ?? id),
+        });
+      }
 
       setTrafficState(nextState);
       setIntensity(nextIntensity);

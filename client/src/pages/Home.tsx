@@ -56,6 +56,7 @@ export default function Home() {
     sourceCount,
     destinationCount,
     updateMultiRoutes,
+    recordSimulatedReroute,
     getNetworkStats,
     hasCustomTopology,
     hasGeneratedTopology,
@@ -591,7 +592,7 @@ export default function Home() {
 
           {/* Dynamic Traffic Surge Simulator Tab */}
           <TabsContent value="surge" forceMount className="data-[state=inactive]:hidden mt-0 min-w-0 flex-1">
-            <TrafficSurgeSimulator nodes={nodes} links={links} />
+            <TrafficSurgeSimulator nodes={nodes} links={links} onReroute={recordSimulatedReroute} />
           </TabsContent>
 
           {/* Statistics Tab */}

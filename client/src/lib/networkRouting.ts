@@ -61,6 +61,55 @@ export function findAvailablePath(
   return [];
 }
 
+export const CONGESTED_TRAFFIC_LEVEL = 68;
+export const FORECAST_PRESSURE_TRAFFIC_LEVEL = 52;
+
+export interface CongestionReroute {
+  path: string[];
+  reason: 'Congestion Detected' | 'Load Balancing';
+}
+
+/**
+ * Alternate route for a flow whose path crosses congested links, or null.
+ *
+ * Only the congested links are excluded; the rest of the current path (such
+ * as a host's single access link) stays usable. The alternate's busiest link
+ * must be less loaded than the current path's, so traffic is not moved onto
+ * an equally congested route.
+ */
+export function congestionReroutePath(
+  flow: PacketFlow,
+  links: NetworkLink[],
+  predictionPressure = false,
+): CongestionReroute | null {
+  const linkByEdge = new Map(links.map(link => [networkEdgeKey(link.source, link.target), link]));
+  const pathEdges = (path: string[]) => path.slice(0, -1).map((node, index) => networkEdgeKey(node, path[index + 1]));
+  const isCongested = (link: NetworkLink) => link.status !== 'failed'
+    && (link.trafficLevel >= CONGESTED_TRAFFIC_LEVEL || link.status === 'warning' || link.status === 'critical');
+
+  const avoid = new Set<string>();
+  let congestionOnPath = false;
+  pathEdges(flow.path).forEach(key => {
+    const link = linkByEdge.get(key);
+    if (!link) return;
+    if (isCongested(link)) {
+      congestionOnPath = true;
+      avoid.add(key);
+    } else if (predictionPressure && link.status !== 'failed' && link.trafficLevel >= FORECAST_PRESSURE_TRAFFIC_LEVEL) {
+      avoid.add(key);
+    }
+  });
+  if (avoid.size === 0) return null;
+
+  const alternate = findAvailablePath(flow.source, flow.destination, links, avoid, true);
+  if (alternate.length < 2) return null;
+  if (alternate.length === flow.path.length && alternate.every((node, index) => node === flow.path[index])) return null;
+
+  const busiest = (path: string[]) => Math.max(0, ...pathEdges(path).map(key => linkByEdge.get(key)?.trafficLevel ?? 0));
+  if (busiest(alternate) >= busiest(flow.path)) return null;
+  return { path: alternate, reason: congestionOnPath ? 'Congestion Detected' : 'Load Balancing' };
+}
+
 export function reconcilePacketFlowForFailures(
   flow: PacketFlow,
   links: NetworkLink[],
