@@ -316,6 +316,8 @@ export function useLiveNetworkDataWithCustom() {
   const [controllerFlows, setControllerFlows] = useState<TelemetryForwardedFlow[]>([]);
   const [lastTelemetryUpdate, setLastTelemetryUpdate] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const failedEdgesRef = useRef<Set<string>>(new Set());
+  const failureTopologyRef = useRef<string>('');
   const nodesRef = useRef(nodes);
   const linksRef = useRef(links);
   const baseLinksRef = useRef(activeLinks);
@@ -345,13 +347,13 @@ export function useLiveNetworkDataWithCustom() {
   }, [peakHours, simulatedMinute]);
 
   useEffect(() => {
-    baseLinksRef.current = activeLinks.map(link => ({ ...link, trafficLevel: 0 }));
+    baseLinksRef.current = activeLinks.map(link => ({ ...link, trafficLevel: 0, status: link.status }));
     setNodes(activeNodes.map(node => ({
       ...node,
       trafficLevel: 0,
       status: activeMode === 'default' && node.type === 'switch' ? 'warning' : 'healthy',
     })));
-    setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0 })));
+    setLinks(activeLinks.map(link => ({ ...link, trafficLevel: 0, status: link.status })));
     setPortStats(activeMode === 'default' ? [] : buildPortStats(activeNodes, activeLinks));
     setRerouteEvents([]);
     const resetPredictions = activeMode === 'default' ? [] : [buildPrediction(activeLinks)];

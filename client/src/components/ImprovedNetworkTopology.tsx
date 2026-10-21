@@ -237,8 +237,8 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
         const sourcePos = positions.get(link.source);
         const targetPos = positions.get(link.target);
         if (!sourcePos || !targetPos) return;
-        const color = statusColor(link.status);
         const routeEdge = routeEdges.has(`${link.source}::${link.target}`);
+        const color = statusColor(link.status);
         const traffic = clamp(link.trafficLevel, 0, 100);
         const lineWidth = routeEdge ? 4 : 1.5 + traffic * 0.025;
 
@@ -264,7 +264,7 @@ export const ImprovedNetworkTopology: React.FC<ImprovedNetworkTopologyProps> = (
 
         const midX = (sourcePos.x + targetPos.x) / 2;
         const midY = (sourcePos.y + targetPos.y) / 2;
-        drawPill(ctx, `${traffic.toFixed(0)}%`, midX, midY, linkStrokeColor(link.status, routeEdge), { fontSize: 10 });
+  drawPill(ctx, link.status === 'failed' ? 'FAILED' : `${traffic.toFixed(0)}%`, midX, midY, linkStrokeColor(link.status, routeEdge), { fontSize: 10 });
       });
 
       // Nodes use hard-edged instrument rings and a geometric glyph for clarity.
