@@ -1,8 +1,10 @@
-import React from 'react';
-import { Activity, AlertTriangle, BrainCircuit, CirclePause, Play, RotateCcw, Route, Sparkles, TimerReset, Zap } from 'lucide-react';
+import React, { useState } from 'react';
+import { Activity, AlertTriangle, BrainCircuit, CirclePause, Play, Plus, RotateCcw, Route, Sparkles, TimerReset, Trash2, Zap } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { NetworkLink, NetworkNode } from '@/hooks/useLiveNetworkData';
 import { useTrafficSurgeSimulator, type TrafficState } from '@/hooks/useTrafficSurgeSimulator';
+import { useTopologyContext } from '@/contexts/TopologyContext';
+import { addPeakHour, isValidPeakHourPeriod, peakHourDurationMinutes, removePeakHour, updatePeakHour } from '@/lib/peakHours';
 
 interface TrafficSurgeSimulatorProps {
   nodes: NetworkNode[];
@@ -33,9 +35,36 @@ function pathLabel(path: string[], nodes: NetworkNode[]) {
 
 export function TrafficSurgeSimulator({ nodes, links }: TrafficSurgeSimulatorProps) {
   const simulator = useTrafficSurgeSimulator(nodes, links);
+  const { peakHours, setPeakHours } = useTopologyContext();
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const maxHistory = Math.max(100, ...simulator.history.map(point => point.intensity));
   const affectedEdge = simulator.affectedLink ? edgeKey(simulator.affectedLink.source, simulator.affectedLink.target) : '';
   const recommendedEdges = new Set(simulator.routing.recommendedPath.slice(0, -1).map((node, index) => edgeKey(node, simulator.routing.recommendedPath[index + 1])));
+  const editPeakHour = (id: string, changes: Parameters<typeof updatePeakHour>[2]) => {
+    const current = peakHours.find(period => period.id === id);
+    if (!current || !isValidPeakHourPeriod({ ...current, ...changes })) {
+      setScheduleError('Each period needs a name, valid times, different start and end times, and an intensity from 0 to 100.');
+      return;
+    }
+    setScheduleError(null);
+    setPeakHours(previous => {
+      const latest = previous.find(period => period.id === id);
+      if (!latest || !isValidPeakHourPeriod({ ...latest, ...changes })) return previous;
+      return updatePeakHour(previous, id, changes);
+    });
+  };
+  const addPeakPeriod = () => {
+    const id = crypto.randomUUID();
+    setScheduleError(null);
+    setPeakHours(previous => addPeakHour(previous, {
+      id,
+      name: `Peak period ${previous.length + 1}`,
+      startTime: '09:00',
+      endTime: '10:00',
+      intensity: 75,
+      enabled: true,
+    }));
+  };
 
   return (
     <div className="space-y-6">
@@ -71,7 +100,57 @@ export function TrafficSurgeSimulator({ nodes, links }: TrafficSurgeSimulatorPro
             <button type="button" onClick={simulator.reset} className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/10 bg-slate-950/40 px-3 font-mono text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-600 hover:text-white"><RotateCcw className="h-4 w-4" /> Reset</button>
             <button type="button" onClick={simulator.triggerSurge} className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-orange-400/40 bg-orange-400/10 px-3 font-mono text-xs font-semibold uppercase tracking-wide text-orange-200 transition hover:bg-orange-400/20"><Zap className="h-4 w-4" /> Trigger Surge</button>
           </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 font-mono text-[11px] text-amber-100"><TimerReset className="h-3.5 w-3.5 text-amber-300" /> Surge timing is stochastic per run; Morning-like and Evening-like are demonstration patterns, not fixed clock rules.</div>
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 font-mono text-[11px] text-amber-100"><TimerReset className="h-3.5 w-3.5 text-amber-300" /> Scenario surges are stochastic per run; configured Peak Hours below use fixed daily clock times.</div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass rounded-2xl border-amber-500/20 bg-slate-900/30 backdrop-blur-xl">
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="font-mono text-sm uppercase tracking-wide text-white">Peak Hours Schedule</CardTitle>
+              <CardDescription className="mt-1">Daily simulated periods use the shared accelerated clock. Overnight periods are supported; start and end must differ. Overlaps apply the highest enabled intensity.</CardDescription>
+            </div>
+            <button type="button" onClick={addPeakPeriod} className="inline-flex h-9 items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/[0.08] px-3 font-mono text-[11px] font-semibold uppercase tracking-wide text-amber-200 transition hover:bg-amber-400/[0.16]">
+              <Plus className="h-3.5 w-3.5" /> Add peak period
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {peakHours.length === 0 ? (
+            <p className="rounded-lg border border-white/10 bg-slate-950/30 p-3 font-mono text-xs text-slate-500">No peak periods configured. Simulated traffic will follow its baseline pattern.</p>
+          ) : peakHours.map(period => (
+            <div key={period.id} className="grid gap-3 rounded-xl border border-white/10 bg-slate-950/30 p-3 md:grid-cols-[minmax(140px,1.3fr)_minmax(110px,0.8fr)_minmax(110px,0.8fr)_minmax(150px,1.2fr)_auto_auto] md:items-end">
+              <label className="space-y-1">
+                <span className="font-mono text-[9px] uppercase tracking-widest text-slate-500">Period name</span>
+                <input aria-label={`${period.name} period name`} value={period.name} onChange={event => editPeakHour(period.id, { name: event.target.value })} className="h-9 w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 text-sm text-slate-200 outline-none focus:border-amber-400/50" />
+              </label>
+              <label className="space-y-1">
+                <span className="font-mono text-[9px] uppercase tracking-widest text-slate-500">Start</span>
+                <input aria-label={`${period.name} start time`} type="time" value={period.startTime} onChange={event => editPeakHour(period.id, { startTime: event.target.value })} className="h-9 w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 text-sm text-slate-200 outline-none focus:border-amber-400/50" />
+              </label>
+              <label className="space-y-1">
+                <span className="font-mono text-[9px] uppercase tracking-widest text-slate-500">End</span>
+                <input aria-label={`${period.name} end time`} type="time" value={period.endTime} onChange={event => editPeakHour(period.id, { endTime: event.target.value })} className="h-9 w-full rounded-lg border border-white/10 bg-slate-900/70 px-2 text-sm text-slate-200 outline-none focus:border-amber-400/50" />
+              </label>
+              <label className="space-y-1">
+                <span className="flex justify-between font-mono text-[9px] uppercase tracking-widest text-slate-500"><span>Traffic intensity</span><span>{period.intensity}%</span></span>
+                <input aria-label={`${period.name} traffic intensity`} type="range" min="0" max="100" step="1" value={period.intensity} onChange={event => editPeakHour(period.id, { intensity: Number(event.target.value) })} className="h-9 w-full accent-amber-400" />
+              </label>
+              <label className="flex h-9 items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                <input aria-label={`${period.name} enabled`} type="checkbox" checked={period.enabled} onChange={event => editPeakHour(period.id, { enabled: event.target.checked })} className="accent-amber-400" />
+                Enabled
+              </label>
+              <div className="flex h-9 items-center justify-between gap-3">
+                <span className="whitespace-nowrap font-mono text-[9px] uppercase tracking-wide text-slate-500">{Math.floor(peakHourDurationMinutes(period) / 60)}h {peakHourDurationMinutes(period) % 60}m</span>
+                <button type="button" onClick={() => setPeakHours(previous => removePeakHour(previous, period.id))} aria-label={`Remove ${period.name}`} title={`Remove ${period.name}`} className="rounded-lg border border-red-500/20 bg-red-500/[0.06] p-2 text-red-300 transition hover:bg-red-500/15">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+          {simulator.activePeakHour && <p className="font-mono text-[10px] uppercase tracking-wider text-amber-200">{simulator.activePeakHour.name} is active at {simulator.activePeakHour.intensity}% for simulated time {simulator.simulatedTime}.</p>}
+          {scheduleError && <p role="alert" className="font-mono text-[10px] text-red-300">{scheduleError}</p>}
         </CardContent>
       </Card>
 
@@ -87,7 +166,7 @@ export function TrafficSurgeSimulator({ nodes, links }: TrafficSurgeSimulatorPro
         <Card className="glass rounded-2xl border-white/10 bg-slate-900/30 backdrop-blur-xl">
           <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 font-mono text-sm uppercase tracking-wide"><Zap className="h-4 w-4 text-amber-300" /> Event Information</CardTitle><CardDescription>Known event timing is visible; unexpected events appear only after detection.</CardDescription></CardHeader>
           <CardContent className="space-y-3">
-            {simulator.currentEvent ? <div className="rounded-xl border border-orange-400/25 bg-orange-400/[0.06] p-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-xs font-semibold uppercase tracking-wider text-orange-200">{simulator.currentEvent.name}</span><span className="rounded border border-orange-400/30 px-2 py-1 font-mono text-[10px] text-orange-200">{simulator.currentEvent.impact} IMPACT</span></div><p className="mt-2 font-mono text-[11px] text-slate-400">Detected {formatSimulatedTime(simulator.currentEvent.detectedMinute ?? simulator.simulatedMinute)} · Duration {simulator.currentEvent.durationMinutes ?? 0} min</p></div> : <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.05] p-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-xs font-semibold uppercase tracking-wider text-cyan-200">Major Ticket Release</span><span className="rounded border border-cyan-400/30 px-2 py-1 font-mono text-[10px] text-cyan-200">{formatSimulatedTime(simulator.nextScheduledEvent.scheduledMinute)} SCHEDULED</span></div><p className="mt-2 font-mono text-[11px] text-slate-400">Time until event: {simulator.nextScheduledEvent.timeUntilMinutes} min · Expected impact: HIGH</p></div>}
+            {simulator.activePeakHour ? <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] p-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-xs font-semibold uppercase tracking-wider text-amber-200">{simulator.activePeakHour.name}</span><span className="rounded border border-amber-400/30 px-2 py-1 font-mono text-[10px] text-amber-200">{simulator.activePeakHour.intensity}% LOAD</span></div><p className="mt-2 font-mono text-[11px] text-slate-400">Scheduled {simulator.activePeakHour.startTime}–{simulator.activePeakHour.endTime} · Active at {simulator.simulatedTime}</p></div> : simulator.currentEvent ? <div className="rounded-xl border border-orange-400/25 bg-orange-400/[0.06] p-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-xs font-semibold uppercase tracking-wider text-orange-200">{simulator.currentEvent.name}</span><span className="rounded border border-orange-400/30 px-2 py-1 font-mono text-[10px] text-orange-200">{simulator.currentEvent.impact} IMPACT</span></div><p className="mt-2 font-mono text-[11px] text-slate-400">Detected {formatSimulatedTime(simulator.currentEvent.detectedMinute ?? simulator.simulatedMinute)} · Duration {simulator.currentEvent.durationMinutes ?? 0} min</p></div> : <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.05] p-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-xs font-semibold uppercase tracking-wider text-cyan-200">{simulator.nextScheduledEvent.name}</span><span className="rounded border border-cyan-400/30 px-2 py-1 font-mono text-[10px] text-cyan-200">{formatSimulatedTime(simulator.nextScheduledEvent.scheduledMinute)} SCHEDULED</span></div><p className="mt-2 font-mono text-[11px] text-slate-400">{simulator.nextScheduledEvent.timeUntilMinutes} min until start · {simulator.nextScheduledEvent.impact} impact</p></div>}
           </CardContent>
         </Card>
       </div>

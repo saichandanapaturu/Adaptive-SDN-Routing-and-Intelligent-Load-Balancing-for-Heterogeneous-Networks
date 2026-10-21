@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NetworkLink, NetworkNode } from '@/hooks/useLiveNetworkData';
+import { useTopologyContext } from '@/contexts/TopologyContext';
+import { activePeakHourAt, nextPeakHour, PeakHourPeriod } from '@/lib/peakHours';
 
 type Scenario = 'normal' | 'morning' | 'evening' | 'random' | 'flash' | 'dynamic';
 export type TrafficState = 'NORMAL' | 'MODERATE' | 'RAMPING_UP' | 'PEAK' | 'SUDDEN SURGE' | 'FLASH CROWD' | 'RANDOM_SURGE' | 'RAMPING_DOWN' | 'RECOVERY';
@@ -54,6 +56,7 @@ export interface TrafficSurgeState {
   simulatedMinute: number;
   simulatedTime: string;
   currentEvent?: TrafficEventInfo;
+  activePeakHour?: PeakHourPeriod;
   nextScheduledEvent: TrafficEventInfo & { timeUntilMinutes: number };
 }
 
@@ -73,7 +76,6 @@ const formatSimulatedTime = (minute: number) => {
   const normalized = ((minute % 1440) + 1440) % 1440;
   return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
 };
-const minutesUntil = (from: number, to: number) => (to - from + 1440) % 1440;
 const baselineForMinute = (minute: number) => {
   const hour = ((minute % 1440) + 1440) % 1440 / 60;
   if (hour < 6) return 18;
@@ -132,6 +134,7 @@ function buildInitialRouting(nodes: NetworkNode[], links: NetworkLink[]): SurgeR
 }
 
 export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLink[]) {
+  const { peakHours, simulatedMinute, setSimulatedMinute } = useTopologyContext();
   const [scenario, setScenario] = useState<Scenario>('random');
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -145,7 +148,6 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
   const [congestionProbability, setCongestionProbability] = useState(18);
   const [trend, setTrend] = useState<TrafficSurgeState['trend']>('STABLE');
   const [runId, setRunId] = useState(0);
-  const [simulatedMinute, setSimulatedMinute] = useState(17 * 60 + 30);
   const [currentEvent, setCurrentEvent] = useState<TrafficEventInfo | undefined>(undefined);
   const elapsedRef = useRef(0);
   const randomRef = useRef<() => number>(seededRandom(Date.now()));
@@ -213,8 +215,7 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
       const step = elapsedRef.current;
       const random = randomRef.current;
       const nextMinute = (simulatedMinute + 15) % 1440;
-      const scheduledEventStart = 18 * 60;
-      const scheduledWindow = nextMinute >= scheduledEventStart - 15 && nextMinute <= scheduledEventStart + 45;
+      const activePeak = activePeakHourAt(peakHours, nextMinute);
       const randomEventMinute = randomEventMinuteRef.current ?? 720;
       const randomWindow = nextMinute >= randomEventMinute && nextMinute <= randomEventMinute + 30;
       if (randomWindow && !randomEventDetectedRef.current) {
@@ -252,9 +253,12 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
       }
 
       const dayBaseline = baselineForMinute(nextMinute);
-      const eventBoost = scheduledWindow ? 22 : randomWindow ? 28 : 0;
+      const eventBoost = randomWindow ? 28 : 0;
       target = clamp(target * 0.58 + dayBaseline * 0.42 + eventBoost);
-      if (scheduledWindow && nextState === 'NORMAL') nextState = nextMinute < scheduledEventStart ? 'RAMPING_UP' : 'PEAK';
+      if (activePeak) {
+        target = Math.max(target, activePeak.intensity);
+        if (nextState === 'NORMAL') nextState = 'PEAK';
+      }
       if (randomWindow) nextState = 'RANDOM_SURGE';
       const currentIntensity = intensity;
       const smoothing = scenario === 'flash' && nextState === 'FLASH CROWD' ? 0.72 : 0.32;
@@ -291,11 +295,30 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
       previousIntensityRef.current = nextIntensity;
     }, Math.max(200, 1000 / speed));
     return () => window.clearInterval(interval);
-  }, [links, nodes, running, paused, scenario, speed, intensity, trafficState, routing.action]);
+  }, [links, nodes, running, paused, scenario, speed, intensity, trafficState, routing.action, simulatedMinute, peakHours]);
 
   const scenarioOptions = useMemo(() => SCENARIOS, []);
   const affectedLink = links[affectedIndexRef.current % Math.max(links.length, 1)];
   const affectedNodeLabels = affectedLink ? [affectedLink.source, affectedLink.target] : [];
+  const activePeakHour = activePeakHourAt(peakHours, simulatedMinute);
+  const nextPeak = nextPeakHour(peakHours, simulatedMinute);
+  const wasPeakActiveRef = useRef(false);
+
+  useEffect(() => {
+    if (running && !paused) return;
+    if (activePeakHour) {
+      setIntensity(activePeakHour.intensity);
+      setTrafficState('PEAK');
+      setSurgeActive(true);
+      wasPeakActiveRef.current = true;
+    } else if (wasPeakActiveRef.current) {
+      setIntensity(baselineForMinute(simulatedMinute));
+      setTrafficState('NORMAL');
+      setSurgeActive(false);
+      setCongestionProbability(clamp(12 + baselineForMinute(simulatedMinute) * 0.66));
+      wasPeakActiveRef.current = false;
+    }
+  }, [activePeakHour, paused, running, simulatedMinute]);
 
   return {
     scenario,
@@ -323,12 +346,20 @@ export function useTrafficSurgeSimulator(nodes: NetworkNode[], links: NetworkLin
     simulatedMinute,
     simulatedTime: formatSimulatedTime(simulatedMinute),
     currentEvent,
-    nextScheduledEvent: {
-      name: 'Major Ticket Release',
-      scheduledMinute: 18 * 60,
-      impact: 'HIGH',
-      timeUntilMinutes: minutesUntil(simulatedMinute, 18 * 60),
-    },
+    activePeakHour,
+    nextScheduledEvent: nextPeak
+      ? {
+        name: nextPeak.period.name,
+        scheduledMinute: nextPeak.scheduledMinute,
+        impact: nextPeak.period.intensity >= 75 ? 'HIGH' : nextPeak.period.intensity >= 40 ? 'MEDIUM' : 'LOW',
+        timeUntilMinutes: nextPeak.timeUntilMinutes,
+      }
+      : {
+        name: 'No enabled peak periods',
+        scheduledMinute: simulatedMinute,
+        impact: 'LOW',
+        timeUntilMinutes: 0,
+      },
   } satisfies Omit<TrafficSurgeState, 'scenario'> & {
     scenario: Scenario;
     setScenario: typeof setScenario;
