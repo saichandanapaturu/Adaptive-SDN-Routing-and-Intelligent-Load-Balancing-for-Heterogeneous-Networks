@@ -12,9 +12,9 @@ from os_ken.lib import hub
 from os_ken.lib.packet import ethernet, ether_types, packet
 
 try:
-    from server.controller.routing import SwitchLink, find_switch_path, route_output_ports
+    from server.controller.routing import SwitchLink, route_output_ports, select_switch_path
 except ImportError:
-    from routing import SwitchLink, find_switch_path, route_output_ports
+    from routing import SwitchLink, route_output_ports, select_switch_path
 
 
 LOG = logging.getLogger("aife.forwarding")
@@ -43,13 +43,18 @@ class LearnedFlow:
     status: str
     blocked_reason: Optional[str] = None
     failed_link: Optional[str] = None
+    # How the controller chose the installed path, and the highest predicted
+    # egress-port congestion probability on it when ML ranking was used.
+    route_selection: Optional[str] = None
+    predicted_risk: Optional[float] = None
 
 
 class AIFEForwarding:
     """Maintain detected links and install only verified OpenFlow routes."""
 
-    def __init__(self, datapaths: Dict[int, Any]) -> None:
+    def __init__(self, datapaths: Dict[int, Any], predictor: Any = None) -> None:
         self.datapaths = datapaths
+        self.predictor = predictor
         self.links: Dict[Tuple[int, int], SwitchLink] = {}
         self.port_states: Dict[Tuple[int, int], bool] = {}
         self.port_names: Dict[Tuple[int, int], str] = {}
@@ -388,21 +393,28 @@ class AIFEForwarding:
         )
         datapath.send_msg(packet_out)
 
-    def _path_and_outputs(self, flow: LearnedFlow) -> Tuple[List[int], List[Tuple[int, int]]]:
+    def _path_and_outputs(self, flow: LearnedFlow) -> Tuple[List[int], List[Tuple[int, int]], str, Optional[float]]:
         source_up = self.port_states.get((flow.source_dpid, flow.source_port))
         destination_up = self.port_states.get((flow.destination_dpid, flow.destination_port))
         if source_up is not True or destination_up is not True:
-            return [], []
-        path = find_switch_path(flow.source_dpid, flow.destination_dpid, self.links.values())
+            return [], [], "host_port_unavailable", None
+        path, selection, risk = select_switch_path(
+            flow.source_dpid,
+            flow.destination_dpid,
+            self.links.values(),
+            self.predictor.probability if self.predictor is not None else None,
+        )
         outputs = route_output_ports(path, self.links.values(), flow.source_port, flow.destination_port)
-        return path, outputs
+        return path, outputs, selection, risk
 
     def _install_flow(self, flow: LearnedFlow) -> bool:
-        path, outputs = self._path_and_outputs(flow)
+        path, outputs, selection, risk = self._path_and_outputs(flow)
         if not path or not outputs:
             flow.path = []
             flow.status = "blocked"
             flow.blocked_reason = "no_operational_route"
+            flow.route_selection = None
+            flow.predicted_risk = None
             self._record_event(
                 "flow_blocked",
                 source=flow.source_mac,
@@ -455,6 +467,8 @@ class AIFEForwarding:
         flow.path = path
         flow.status = "active"
         flow.blocked_reason = None
+        flow.route_selection = selection
+        flow.predicted_risk = risk
         if old_path and old_path != path:
             self._record_event(
                 "flow_rerouted",
@@ -468,8 +482,10 @@ class AIFEForwarding:
         return True
 
     def _first_output(self, flow: LearnedFlow) -> int:
-        path, outputs = self._path_and_outputs(flow)
-        if not path or not outputs:
+        # Use the installed path: a fresh selection could differ if a newer
+        # prediction arrived while the barrier was pending.
+        outputs = route_output_ports(flow.path, self.links.values(), flow.source_port, flow.destination_port)
+        if not outputs:
             raise RuntimeError("AIFE route disappeared after successful rule installation")
         return outputs[0][1]
 
@@ -520,6 +536,8 @@ class AIFEForwarding:
         flow.status = "blocked"
         flow.path = []
         flow.blocked_reason = reason
+        flow.route_selection = None
+        flow.predicted_risk = None
         self._record_event(
             "flow_blocked",
             source=flow.source_mac,

@@ -84,6 +84,35 @@ export interface TelemetryForwardedFlow {
   blocked_reason: string | null;
 }
 
+export interface TelemetryLeadTime {
+  status: 'available' | 'unavailable';
+  reason: string | null;
+  statistic: 'median';
+  unit: 'seconds';
+  median_seconds: number | null;
+  mean_seconds: number | null;
+  events_evaluated: number;
+  events_warned: number;
+}
+
+/** Random Forest status and held-out evaluation from /api/telemetry/model. */
+export interface TelemetryModelStatus {
+  model_type: 'random_forest';
+  status: 'trained' | 'unavailable';
+  reason: string | null;
+  inference?: string;
+  trained_at?: string;
+  split?: { test_rows: number; train_rows: number; test_start: string; test_end: string };
+  evaluation?: {
+    accuracy: number;
+    balanced_accuracy: number;
+    precision: number;
+    recall: number;
+    f1: number;
+  };
+  lead_time?: TelemetryLeadTime;
+}
+
 export interface TelemetrySnapshot {
   health: TelemetryHealth;
   switches: TelemetrySwitch[];
@@ -197,6 +226,29 @@ function isForwardedFlow(value: unknown): value is TelemetryForwardedFlow {
     && (value.blocked_reason === null || typeof value.blocked_reason === 'string');
 }
 
+function isProbability(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0 && value <= 1;
+}
+
+function isLeadTime(value: unknown): value is TelemetryLeadTime {
+  if (!isRecord(value) || !isFiniteNumber(value.events_evaluated) || !isFiniteNumber(value.events_warned)) return false;
+  if (value.status === 'available') {
+    return isFiniteNumber(value.median_seconds) && value.median_seconds >= 0 && isFiniteNumber(value.mean_seconds);
+  }
+  return value.status === 'unavailable';
+}
+
+function isModelStatus(value: unknown): value is TelemetryModelStatus {
+  if (!isRecord(value) || value.model_type !== 'random_forest') return false;
+  if (value.status === 'unavailable') return true;
+  return value.status === 'trained'
+    && isRecord(value.evaluation)
+    && ['accuracy', 'balanced_accuracy', 'precision', 'recall', 'f1'].every(field => isProbability((value.evaluation as Record<string, unknown>)[field]))
+    && isRecord(value.split)
+    && isFiniteNumber(value.split.test_rows)
+    && isLeadTime(value.lead_time);
+}
+
 async function getJson(path: string, signal: AbortSignal, baseUrl: string): Promise<unknown> {
   let response: Response;
   try {
@@ -289,6 +341,18 @@ export async function fetchTelemetrySnapshot(options?: { timeoutMs?: number; bas
       events: eventsBody.events,
       flows: forwardingBody.flows,
     };
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
+export async function fetchModelStatus(options?: { timeoutMs?: number; baseUrl?: string }): Promise<TelemetryModelStatus> {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  try {
+    const body = await getJson('/api/telemetry/model', controller.signal, options?.baseUrl ?? apiBaseUrl());
+    if (!isModelStatus(body)) throw new TelemetryApiError('Telemetry model response is malformed.', 'malformed');
+    return body;
   } finally {
     globalThis.clearTimeout(timeout);
   }

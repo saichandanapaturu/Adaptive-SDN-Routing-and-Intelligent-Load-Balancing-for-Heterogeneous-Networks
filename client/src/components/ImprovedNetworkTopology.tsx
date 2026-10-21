@@ -119,12 +119,6 @@ function drawNodeGlyph(ctx: CanvasRenderingContext2D, type: NetworkNode['type'],
     ctx.lineTo(x, y + 9);
     ctx.lineTo(x - 8, y + 5);
     ctx.closePath();
-  } else if (type === 'router') {
-    ctx.moveTo(x, y - 9);
-    ctx.lineTo(x + 9, y);
-    ctx.lineTo(x, y + 9);
-    ctx.lineTo(x - 9, y);
-    ctx.closePath();
   } else if (type === 'hub') {
     ctx.arc(x, y, 8, 0, Math.PI * 2);
     ctx.moveTo(x - 12, y);

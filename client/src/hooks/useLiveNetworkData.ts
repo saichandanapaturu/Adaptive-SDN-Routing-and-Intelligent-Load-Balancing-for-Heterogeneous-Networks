@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 export interface NetworkNode {
   id: string;
   label: string;
-  type: 'switch' | 'host' | 'router' | 'hub';
+  // SDN forwarding is done by switches; routers are not topology nodes.
+  type: 'switch' | 'host' | 'hub';
   status: 'healthy' | 'warning' | 'critical';
   x: number;
   y: number;
@@ -71,11 +72,6 @@ const NODES: NetworkNode[] = [
   { id: 'host-1', label: 'Host-1', type: 'host', status: 'healthy', x: 150, y: 250, trafficLevel: 0 },
   { id: 'host-2', label: 'Host-2', type: 'host', status: 'healthy', x: 350, y: 250, trafficLevel: 0 },
   { id: 'host-3', label: 'Host-3', type: 'host', status: 'healthy', x: 550, y: 250, trafficLevel: 0 },
-  { id: 'router-1', label: 'Router-1', type: 'router', status: 'healthy', x: 200, y: 50, trafficLevel: 0 },
-  { id: 'router-2', label: 'Router-2', type: 'router', status: 'healthy', x: 400, y: 50, trafficLevel: 0 },
-  { id: 'router-3', label: 'Router-3', type: 'router', status: 'healthy', x: 600, y: 50, trafficLevel: 0 },
-  { id: 'abs-3', label: 'ABS-3', type: 'router', status: 'healthy', x: 750, y: 250, trafficLevel: 0 },
-  { id: 'rr2s-5', label: 'RR2S-5', type: 'router', status: 'healthy', x: 50, y: 150, trafficLevel: 0 },
   { id: 'core', label: 'Core', type: 'switch', status: 'healthy', x: 400, y: 150, trafficLevel: 0 },
 ];
 
@@ -86,11 +82,6 @@ const LINKS: NetworkLink[] = [
   { source: 'switch-1', target: 'host-1', bandwidth: 1, trafficLevel: 0, status: 'healthy' },
   { source: 'switch-2', target: 'host-2', bandwidth: 1, trafficLevel: 0, status: 'healthy' },
   { source: 'switch-3', target: 'host-3', bandwidth: 1, trafficLevel: 0, status: 'healthy' },
-  { source: 'router-1', target: 'switch-1', bandwidth: 5, trafficLevel: 0, status: 'healthy' },
-  { source: 'router-2', target: 'switch-2', bandwidth: 5, trafficLevel: 0, status: 'healthy' },
-  { source: 'router-3', target: 'switch-3', bandwidth: 5, trafficLevel: 0, status: 'healthy' },
-  { source: 'switch-4', target: 'abs-3', bandwidth: 2, trafficLevel: 0, status: 'healthy' },
-  { source: 'rr2s-5', target: 'switch-1', bandwidth: 3, trafficLevel: 0, status: 'healthy' },
   { source: 'core', target: 'switch-2', bandwidth: 8, trafficLevel: 0, status: 'healthy' },
   { source: 'core', target: 'switch-3', bandwidth: 8, trafficLevel: 0, status: 'healthy' },
   { source: 'switch-1', target: 'core', bandwidth: 8, trafficLevel: 0, status: 'healthy' },
@@ -98,13 +89,6 @@ const LINKS: NetworkLink[] = [
   { source: 'switch-3', target: 'core', bandwidth: 8, trafficLevel: 0, status: 'healthy' },
   { source: 'host-1', target: 'host-2', bandwidth: 1, trafficLevel: 0, status: 'healthy' },
   { source: 'host-2', target: 'host-3', bandwidth: 1, trafficLevel: 0, status: 'healthy' },
-  { source: 'router-1', target: 'router-2', bandwidth: 3, trafficLevel: 0, status: 'healthy' },
-  { source: 'router-2', target: 'router-3', bandwidth: 3, trafficLevel: 0, status: 'healthy' },
-  { source: 'abs-3', target: 'core', bandwidth: 5, trafficLevel: 0, status: 'healthy' },
-  { source: 'rr2s-5', target: 'core', bandwidth: 4, trafficLevel: 0, status: 'healthy' },
-  { source: 'switch-4', target: 'router-3', bandwidth: 2, trafficLevel: 0, status: 'healthy' },
-  { source: 'host-1', target: 'router-1', bandwidth: 1, trafficLevel: 0, status: 'healthy' },
-  { source: 'host-3', target: 'abs-3', bandwidth: 1, trafficLevel: 0, status: 'healthy' },
 ];
 
 function generatePortStats(): PortStat[] {
@@ -136,7 +120,7 @@ function generateRerouteEvent(): RerouteEvent {
     destination: destNode.label,
     reason: reasons[Math.floor(Math.random() * reasons.length)],
     oldPath: [sourceNode.id, 'core', destNode.id],
-    newPath: [sourceNode.id, 'router-1', 'router-2', destNode.id],
+    newPath: findPath(sourceNode.id, destNode.id),
   };
 }
 

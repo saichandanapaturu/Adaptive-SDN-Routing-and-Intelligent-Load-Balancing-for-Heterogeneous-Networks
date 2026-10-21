@@ -74,6 +74,18 @@ class TelemetryApiTests(TestCase):
         self.assertEqual(self.get_json("/api/telemetry/events"), (200, {"events": [{"id": "controller-1", "type": "link_failed"}]}))
         self.assertEqual(self.get_json("/api/telemetry/forwarding"), (200, {"flows": [{"source_mac": "00:00:00:00:00:01", "status": "blocked"}]}))
 
+    def test_model_endpoint_reports_unavailable_without_a_predictor(self) -> None:
+        status, body = self.get_json("/api/telemetry/model")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], "unavailable")
+        self.assertEqual(body["reason"], "predictor_not_configured")
+
+    def test_model_endpoint_serves_predictor_status(self) -> None:
+        self.state.model_provider = lambda: {"model_type": "random_forest", "status": "trained", "evaluation": {"accuracy": 0.5}}
+        status, body = self.get_json("/api/telemetry/model")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["evaluation"]["accuracy"], 0.5)
+
     def test_browser_cors_is_limited_to_loopback_origins(self) -> None:
         local_request = Request(
             self.base_url + "/api/telemetry/topology",

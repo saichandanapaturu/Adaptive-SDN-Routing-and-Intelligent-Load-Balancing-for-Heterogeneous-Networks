@@ -18,6 +18,10 @@ from mininet.net import Mininet
 from mininet.node import OVSSwitch, RemoteController
 from mininet.topo import Topo
 
+# Must match LINK_CAPACITY_BPS in server/controller/congestion_model.py, which
+# defines port utilization and the congestion threshold.
+LINK_BW_MBPS = 10
+
 
 class AIFETopo(Topo):
     """Four OVS switches and three hosts with two paths between h1 and h3."""
@@ -39,15 +43,15 @@ class AIFETopo(Topo):
         }
 
         # Host attachments required by the AIFE topology.
-        self.addLink(hosts["h1"], switches["s1"], cls=TCLink)
-        self.addLink(hosts["h2"], switches["s3"], cls=TCLink)
-        self.addLink(hosts["h3"], switches["s4"], cls=TCLink)
+        self.addLink(hosts["h1"], switches["s1"], cls=TCLink, bw=LINK_BW_MBPS)
+        self.addLink(hosts["h2"], switches["s3"], cls=TCLink, bw=LINK_BW_MBPS)
+        self.addLink(hosts["h3"], switches["s4"], cls=TCLink, bw=LINK_BW_MBPS)
 
         # Switch fabric: this creates two distinct h1-to-h3 paths.
-        self.addLink(switches["s1"], switches["s2"], cls=TCLink)
-        self.addLink(switches["s1"], switches["s3"], cls=TCLink)
-        self.addLink(switches["s2"], switches["s4"], cls=TCLink)
-        self.addLink(switches["s3"], switches["s4"], cls=TCLink)
+        self.addLink(switches["s1"], switches["s2"], cls=TCLink, bw=LINK_BW_MBPS)
+        self.addLink(switches["s1"], switches["s3"], cls=TCLink, bw=LINK_BW_MBPS)
+        self.addLink(switches["s2"], switches["s4"], cls=TCLink, bw=LINK_BW_MBPS)
+        self.addLink(switches["s3"], switches["s4"], cls=TCLink, bw=LINK_BW_MBPS)
 
 
 def run():

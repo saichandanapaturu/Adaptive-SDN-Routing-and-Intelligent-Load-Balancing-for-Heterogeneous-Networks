@@ -221,6 +221,53 @@ class ForwardingRuleTests(TestCase):
         self.assertEqual(blocked.path, [1, 2, 4])
         self.assertEqual(active.path, before_active_path)
 
+    def _installed_output_ports(self):
+        return sorted(
+            instruction.actions[0].port_no
+            for datapath in self.datapaths.values()
+            for message in datapath.sent
+            for instruction in getattr(message, "instructions", [])
+        )
+
+    def test_controller_installs_switch_rules_on_the_ml_ranked_path(self) -> None:
+        self.forwarding.links[(1, 2)].status = "operational"
+        risk = {(1, 12): 0.95, (2, 24): 0.9, (1, 13): 0.1, (3, 34): 0.2}
+        self.forwarding.predictor = SimpleNamespace(probability=lambda dpid, port: risk.get((dpid, port)))
+        flow = self._flow()
+        flow.path = []
+
+        self.assertTrue(self.forwarding._install_flow(flow))
+
+        self.assertEqual(flow.path, [1, 3, 4])
+        self.assertEqual(flow.route_selection, "ml_ranked")
+        self.assertEqual(flow.predicted_risk, 0.2)
+        self.assertEqual(self._installed_output_ports(), [4, 13, 34])
+        self.assertEqual(self.forwarding._first_output(flow), 13)
+
+    def test_unavailable_predictions_keep_existing_shortest_path_rules(self) -> None:
+        self.forwarding.links[(1, 2)].status = "operational"
+        self.forwarding.predictor = SimpleNamespace(probability=lambda _dpid, _port: None)
+        flow = self._flow()
+        flow.path = []
+
+        self.assertTrue(self.forwarding._install_flow(flow))
+
+        self.assertEqual(flow.path, [1, 2, 4])
+        self.assertEqual(flow.route_selection, "shortest_path_fallback")
+        self.assertIsNone(flow.predicted_risk)
+        self.assertEqual(self._installed_output_ports(), [4, 12, 24])
+
+    def test_unconfirmed_rule_installation_reports_blocked_not_active(self) -> None:
+        self.forwarding._barrier = lambda _datapaths: False
+        flow = self._flow()
+        flow.path = []
+
+        self.assertFalse(self.forwarding._install_flow(flow))
+
+        self.assertEqual(flow.status, "blocked")
+        self.assertEqual(flow.path, [])
+        self.assertIsNone(flow.route_selection)
+
 
 if __name__ == "__main__":
     main()

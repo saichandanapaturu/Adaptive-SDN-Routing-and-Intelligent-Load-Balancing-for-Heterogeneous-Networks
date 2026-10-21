@@ -37,10 +37,63 @@ exist. Because the API does not yet provide a verified port-to-link mapping,
 the topology link traffic values and link summary remain unpopulated in
 default mode rather than being inferred from port numbers.
 
-The Prediction and Reroute panels remain in the existing layout, but default
-real-telemetry mode does not claim Random Forest predictions or controller
-reroutes. Custom and generated topology modes retain their existing
-illustrative behavior and are labeled as configured topology visualizations.
+In default mode the Congestion Predictor's Model, Accuracy, and Lead Time cards
+read `GET /api/telemetry/model`. They show `—` until a Random Forest model has
+been trained from recorded controller telemetry, and never compute values in
+the browser. Custom and generated topology modes retain their existing
+illustrative behavior, show `N/A` for model metrics, and are labeled as
+configured topology visualizations.
+
+## Random Forest congestion model
+
+Data flow: OVS switches → OpenFlow port counters → `statistics.py` rates →
+`telemetry_store.py` SQLite history (`server/data/telemetry.sqlite3`, override
+with `AIFE_TELEMETRY_DB`) → `congestion_model.py` features, labels, training,
+and evaluation → `server/data/congestion_rf.joblib` + `congestion_metrics.json`
+(override with `AIFE_MODEL_DIR`) → controller inference and path selection →
+`/api/telemetry/model` → dashboard cards.
+
+Congestion policy, defined in `congestion_model.py`:
+
+- Link capacity 10 Mbit/s; `mininet/topology.py` sets `bw=10` on every link.
+- A port sample is **congested** when TX utilization (`tx_byte_rate × 8 / 10 Mbit/s`) is ≥ 0.8.
+- Prediction horizon 10 s: the label at time t is 1 if the same port is congested at any sample in (t, t + 10 s].
+- A **warning** is a prediction with P(congested within horizon) ≥ 0.5.
+- Features use the port's last 5 measured samples at or before t (TX/RX utilization, TX mean/max/delta/slope, drop delta, packet rates). Windows never span a gap > 3 s, and the first sample after a gap is discarded because its rates were not measured.
+
+Collect telemetry, then train (requires `pip install -r server/requirements-ml.txt`):
+
+```bash
+# With the controller and Mininet running, create bursts above 8 Mbit/s:
+#   mininet> iperf h1 h3        # or: h3 iperf -s &  then  h1 iperf -c 10.0.0.3 -b 9M -t 20
+# Alternate idle periods and bursts for several minutes, then:
+PYTHONPATH=. python3 -m server.controller.congestion_model train
+```
+
+Training refuses to produce a model (exit code 2, JSON reason) when there are
+fewer than 250 labeled rows, or when either split lacks enough congested and
+uncongested rows. The running controller loads a new model file automatically.
+
+- **Split:** rows are ordered by time; the latest 30% are the test set. Training rows whose label window reaches the test period (t + 10 s ≥ test start) are purged, so no test-period congestion labels a training row.
+- **Accuracy:** `accuracy_score` of test-set warnings vs. test labels. Balanced accuracy, precision, recall, F1, and the confusion matrix are reported alongside it. Training accuracy is never reported.
+- **Lead time:** for each congestion onset (a congested sample whose previous measured sample was not congested) in the test period, the first qualifying warning is the earliest test prediction ≥ 0.5 made strictly before the onset, within 10 s of it, and after the port's previous congested sample. Lead time = onset timestamp − first qualifying warning timestamp. The card shows the **median** in seconds over warned onsets; `events_evaluated` and `events_warned` give the detection count. Lead time is a measured quantity bounded by, but distinct from, the configured 10 s horizon. With no onsets or no warned onsets it is reported unavailable.
+
+`GET /api/telemetry/model` returns `{"status": "unavailable", "reason": ...}`
+(for example `model_missing`) or the stored metrics plus `inference`
+(`ready` when the controller can predict).
+
+### Path selection
+
+The routing policy is unchanged: shortest operational hop count. When a flow
+is installed or repaired, the controller enumerates the equal-hop operational
+candidates. If every egress port on every candidate has a fresh prediction
+(newest sample ≤ 5 s old, complete window, model loaded), candidates are ranked
+by highest predicted port risk, then total risk; otherwise the existing
+deterministic shortest path is used. Failed or unverified links are never
+candidates. Each flow in `/api/telemetry/forwarding` reports
+`route_selection` (`ml_ranked`, `shortest_path_fallback`, or `single_switch`)
+and `predicted_risk`. Already-active flows are not pre-emptively moved when
+predictions change; that is not implemented.
 
 ## Start
 

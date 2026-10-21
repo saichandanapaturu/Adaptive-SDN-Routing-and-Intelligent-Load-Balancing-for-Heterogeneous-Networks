@@ -47,7 +47,7 @@ export const CustomTopologyBuilder: React.FC = () => {
   };
 
   const [nodeLabel, setNodeLabel] = useState('');
-  const [nodeType, setNodeType] = useState<'switch' | 'host' | 'router'>('switch');
+  const [nodeType, setNodeType] = useState<'switch' | 'host'>('switch');
   const [linkSource, setLinkSource] = useState('');
   const [linkTarget, setLinkTarget] = useState('');
   const [linkBandwidth, setLinkBandwidth] = useState('1');
@@ -135,7 +135,7 @@ export const CustomTopologyBuilder: React.FC = () => {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Input
-              placeholder="Node label (e.g., Router-1)"
+              placeholder="Node label (e.g., Switch-1)"
               value={nodeLabel}
               onChange={(e) => setNodeLabel(e.target.value)}
               className="bg-slate-800/50 backdrop-blur-md border-white/10"
@@ -148,7 +148,6 @@ export const CustomTopologyBuilder: React.FC = () => {
               <SelectContent className="glass bg-slate-900/80 backdrop-blur-xl border-white/10">
                 <SelectItem value="switch">Switch</SelectItem>
                 <SelectItem value="host">Host</SelectItem>
-                <SelectItem value="router">Router</SelectItem>
               </SelectContent>
             </Select>
             <Button onClick={handleAddNode} className="bg-emerald-600 hover:bg-emerald-700">

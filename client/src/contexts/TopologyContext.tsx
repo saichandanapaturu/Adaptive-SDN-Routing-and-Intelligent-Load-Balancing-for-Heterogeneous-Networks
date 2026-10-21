@@ -7,6 +7,7 @@ import {
   parsePeakHourSchedule,
   serializePeakHourSchedule,
 } from '@/lib/peakHours';
+import { toSdnNodes } from '@/lib/sdnTopology';
 
 interface TopologyContextType {
   customNodes: NetworkNode[];
@@ -55,7 +56,7 @@ export function TopologyProvider({ children }: { children: ReactNode }) {
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem(STORAGE_KEY_NODES);
-      return stored ? JSON.parse(stored) : [];
+      return stored ? toSdnNodes(JSON.parse(stored)) : [];
     } catch {
       return [];
     }
@@ -75,7 +76,7 @@ export function TopologyProvider({ children }: { children: ReactNode }) {
     if (typeof window === 'undefined') return [];
     try {
       const stored = localStorage.getItem(STORAGE_KEY_GENERATED_NODES);
-      return stored ? JSON.parse(stored) : [];
+      return stored ? toSdnNodes(JSON.parse(stored)) : [];
     } catch {
       return [];
     }

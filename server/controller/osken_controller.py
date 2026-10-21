@@ -2,6 +2,7 @@
 """AIFE OpenFlow 1.3 controller, topology discovery, forwarding, and telemetry."""
 
 import logging
+import sqlite3
 from typing import Dict
 
 from os_ken.base import app_manager
@@ -22,13 +23,17 @@ except ImportError:
     from forwarding import AIFEForwarding
 
 try:
+    from server.controller.congestion_model import CongestionPredictor
     from server.controller.statistics import OpenFlowStatisticsCollector
     from server.controller.telemetry_api import TelemetryApiState, TelemetryService
+    from server.controller.telemetry_store import TelemetryStore
 except ImportError:
     # Supports launching the file directly through osken-manager from its
     # controller directory, where that directory is placed on sys.path.
+    from congestion_model import CongestionPredictor
     from statistics import OpenFlowStatisticsCollector
     from telemetry_api import TelemetryApiState, TelemetryService
+    from telemetry_store import TelemetryStore
 
 
 LOG = logging.getLogger("aife.osken_controller")
@@ -43,8 +48,16 @@ class AIFEController(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.connected_switches: Dict[int, object] = {}
-        self.forwarding = AIFEForwarding(self.connected_switches)
+        self.predictor = CongestionPredictor()
+        LOG.info("Random Forest congestion predictor: %s", self.predictor.inference_status)
+        self.forwarding = AIFEForwarding(self.connected_switches, self.predictor)
         self.statistics = OpenFlowStatisticsCollector()
+        try:
+            self.telemetry_store = TelemetryStore()
+            LOG.info("Recording port statistics to %s", self.telemetry_store.path)
+        except (OSError, sqlite3.Error):
+            LOG.exception("Telemetry history disabled: could not open the SQLite store")
+            self.telemetry_store = None
         self.telemetry_service = TelemetryService(
             TelemetryApiState(
                 self.statistics,
@@ -52,6 +65,7 @@ class AIFEController(app_manager.OSKenApp):
                 self.forwarding.topology_snapshot,
                 self.forwarding.events_snapshot,
                 self.forwarding.forwarding_snapshot,
+                self.predictor.status,
             )
         )
         self.telemetry_service.start()
@@ -146,6 +160,13 @@ class AIFEController(app_manager.OSKenApp):
         """Process counters from a real OpenFlow port-statistics reply."""
         datapath = ev.msg.datapath
         samples = self.statistics.process_port_stats(datapath.id, ev.msg.body)
+        self.predictor.observe(samples)
+        if self.telemetry_store is not None:
+            try:
+                self.telemetry_store.record(samples)
+            except sqlite3.Error:
+                LOG.exception("Telemetry history disabled: SQLite write failed")
+                self.telemetry_store = None
         for sample in samples:
             LOG.info(
                 "[STATS] DPID=%s PORT=%s RX_BYTES=%s TX_BYTES=%s "

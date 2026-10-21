@@ -39,6 +39,7 @@ class TelemetryApiState:
         topology_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         events_provider: Optional[Callable[[], List[Dict[str, Any]]]] = None,
         forwarding_provider: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+        model_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         *,
         stale_after_seconds: float = DEFAULT_STALE_SECONDS,
         now: Optional[Callable[[], datetime]] = None,
@@ -48,6 +49,9 @@ class TelemetryApiState:
         self.topology_provider = topology_provider or (lambda: {"nodes": [], "links": []})
         self.events_provider = events_provider or (lambda: [])
         self.forwarding_provider = forwarding_provider or (lambda: [])
+        self.model_provider = model_provider or (
+            lambda: {"model_type": "random_forest", "status": "unavailable", "reason": "predictor_not_configured"}
+        )
         self.stale_after_seconds = max(0.1, stale_after_seconds)
         self._now = now or (lambda: datetime.now(timezone.utc))
 
@@ -143,6 +147,9 @@ class _TelemetryRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/telemetry/forwarding":
             self._send_json({"flows": state.forwarding_provider()})
+            return
+        if path == "/api/telemetry/model":
+            self._send_json(state.model_provider())
             return
         if path == "/api/telemetry/ports":
             health = state.health()

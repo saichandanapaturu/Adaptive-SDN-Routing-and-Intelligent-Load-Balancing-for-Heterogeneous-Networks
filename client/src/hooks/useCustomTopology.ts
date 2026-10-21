@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useTopologyContext } from '@/contexts/TopologyContext';
 import { NetworkNode, NetworkLink } from './useLiveNetworkData';
+import { toSdnNodes } from '@/lib/sdnTopology';
 
 export function useCustomTopology() {
   const context = useTopologyContext();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
-  const addNode = (label: string, x: number, y: number, type: 'switch' | 'host' | 'router' = 'switch') => {
+  const addNode = (label: string, x: number, y: number, type: 'switch' | 'host' = 'switch') => {
     const newNode: NetworkNode = {
       id: `node-${Date.now()}`,
       label,
@@ -76,7 +77,7 @@ export function useCustomTopology() {
   const importTopology = (jsonData: string): boolean => {
     try {
       const { nodes: importedNodes, links: importedLinks } = JSON.parse(jsonData);
-      context.setCustomNodes(importedNodes);
+      context.setCustomNodes(toSdnNodes(importedNodes));
       context.setCustomLinks(importedLinks);
       return true;
     } catch (error) {
