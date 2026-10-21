@@ -364,7 +364,7 @@ export default function Home() {
           <Card className="glass rounded-2xl border-red-500/25 bg-slate-900/30 p-4 backdrop-blur-xl">
             <div className="flex items-start justify-between">
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-slate-400 mb-1.5">Failed Links</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-slate-400 mb-1.5">At-Risk Links</p>
                 <p className="font-mono text-3xl font-semibold text-red-400">{stats.failedLinks}</p>
               </div>
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/40 bg-red-500/10 text-red-400">
