@@ -115,10 +115,16 @@ def port_features(window: Sequence[Dict[str, Any]]) -> Optional[List[float]]:
     utilization = [tx_utilization(sample) for sample in window]
     last, previous, first = window[-1], window[-2], window[0]
     dropped = lambda sample: int(sample["tx_dropped"]) + int(sample["rx_dropped"])
+    # Plain left-to-right addition: Python 3.12+ sum() is compensated, which
+    # would make features depend on the Python version and differ from the
+    # browser implementation (simulatedCongestionModel.ts).
+    total = 0.0
+    for value in utilization:
+        total += value
     return [
         utilization[-1],
         float(last["rx_byte_rate"]) * 8.0 / LINK_CAPACITY_BPS,
-        sum(utilization) / len(utilization),
+        total / len(utilization),
         max(utilization),
         utilization[-1] - utilization[-2],
         (utilization[-1] - utilization[0]) / (last["ts"] - first["ts"]),
@@ -176,11 +182,13 @@ def build_dataset(segments: Dict[PortKey, List[List[Dict[str, Any]]]]) -> List[L
                     continue
                 if end_ts < sample["ts"] + HORIZON_SECONDS - HORIZON_COVERAGE_TOLERANCE_SECONDS:
                     break
-                label = int(any(
-                    is_congested(future)
-                    for future in segment[index + 1:]
-                    if future["ts"] - sample["ts"] <= HORIZON_SECONDS
-                ))
+                label = 0
+                ahead = index + 1
+                while ahead < len(segment) and segment[ahead]["ts"] - sample["ts"] <= HORIZON_SECONDS:
+                    if is_congested(segment[ahead]):
+                        label = 1
+                        break
+                    ahead += 1
                 rows.append(LabeledRow(sample["ts"], port, features, label))
     rows.sort(key=lambda row: (row.ts, row.port))
     return rows
@@ -223,24 +231,24 @@ def lead_time_backtest(
                 if is_congested(segment[index - 1]):
                     continue
                 onset = sample["ts"]
-                for back in range(index - 1, -1, -1):
-                    if is_congested(segment[back]):
-                        run_start = segment[back + 1]["ts"]
-                        break
-                else:
-                    run_start = segment[0]["ts"]
-                window_start = max(onset - HORIZON_SECONDS, run_start)
+                # Walk back through the uncongested run before the onset, at
+                # most one horizon; the earliest qualifying warning wins.
+                window_start = onset - HORIZON_SECONDS
+                first_warning: Optional[float] = None
+                back = index - 1
+                while back >= 0 and segment[back]["ts"] >= window_start and not is_congested(segment[back]):
+                    if probabilities.get((port, segment[back]["ts"]), 0.0) >= WARNING_PROBABILITY:
+                        first_warning = segment[back]["ts"]
+                    back -= 1
+                if back >= 0 and is_congested(segment[back]):
+                    window_start = max(window_start, segment[back + 1]["ts"])
+                elif back < 0:
+                    window_start = max(window_start, segment[0]["ts"])
                 if window_start < test_start:
                     continue
                 events += 1
-                warnings = [
-                    earlier["ts"]
-                    for earlier in segment[:index]
-                    if window_start <= earlier["ts"] < onset
-                    and probabilities.get((port, earlier["ts"]), 0.0) >= WARNING_PROBABILITY
-                ]
-                if warnings:
-                    lead_times.append(onset - min(warnings))
+                if first_warning is not None:
+                    lead_times.append(onset - first_warning)
 
     result: Dict[str, Any] = {
         "statistic": "median",
@@ -273,7 +281,13 @@ class TrainingError(Exception):
         self.details = details
 
 
-def train_and_evaluate(samples: List[Dict[str, Any]], *, random_state: int = 42) -> Tuple[Any, Dict[str, Any]]:
+def train_and_evaluate(
+    samples: List[Dict[str, Any]],
+    *,
+    random_state: int = 42,
+    n_estimators: int = 200,
+    max_depth: Optional[int] = None,
+) -> Tuple[Any, Dict[str, Any]]:
     """Fit on the chronological training split and evaluate on the held-out test split."""
     try:
         from sklearn.ensemble import RandomForestClassifier
@@ -309,7 +323,8 @@ def train_and_evaluate(samples: List[Dict[str, Any]], *, random_state: int = 42)
         raise TrainingError("test_split_missing_a_class", **counts)
 
     model = RandomForestClassifier(
-        n_estimators=200,
+        n_estimators=n_estimators,
+        max_depth=max_depth,
         min_samples_leaf=2,
         class_weight="balanced",
         random_state=random_state,

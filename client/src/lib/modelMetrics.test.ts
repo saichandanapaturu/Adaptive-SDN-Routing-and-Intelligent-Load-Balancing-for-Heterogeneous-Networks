@@ -56,6 +56,22 @@ describe('prediction card metrics', () => {
     }
   });
 
+  it('labels the simulated-traffic model as simulated in simulated views', () => {
+    const live = trained();
+    const simulated = { evaluation: live.evaluation!, lead_time: live.lead_time!, split: live.split! };
+    expect(predictionCardMetrics('illustrative', null, simulated)).toMatchObject({
+      trained: true,
+      modelName: 'Random Forest',
+      modelSubtext: 'trained on simulated traffic',
+      accuracy: '91.3%',
+      accuracyNote: 'simulated test · n=412',
+      leadTime: '4.3s',
+      leadTimeNote: 'median · simulated',
+    });
+    // Live controller mode never shows the simulated model's scores.
+    expect(predictionCardMetrics('real-telemetry', null, simulated)).toMatchObject({ trained: false, accuracy: '—' });
+  });
+
   it('never presents illustrative topologies as model results', () => {
     expect(predictionCardMetrics('illustrative', trained())).toMatchObject({
       trained: false,

@@ -1,3 +1,4 @@
+import type { SimulatedCongestionModel } from './simulatedCongestionModel';
 import type { TelemetryModelStatus } from './telemetryApi';
 
 export interface PredictionCardMetrics {
@@ -23,7 +24,25 @@ const LEAD_TIME_REASONS: Record<string, string> = {
 export function predictionCardMetrics(
   dataMode: 'real-telemetry' | 'illustrative',
   modelStatus: TelemetryModelStatus | null | undefined,
+  simulatedModel?: Pick<SimulatedCongestionModel, 'evaluation' | 'lead_time' | 'split'> | null,
 ): PredictionCardMetrics {
+  if (dataMode !== 'real-telemetry' && simulatedModel) {
+    // Scores of the model trained and tested on simulated dashboard traffic.
+    const accuracyPct = simulatedModel.evaluation.accuracy * 100;
+    const lead = simulatedModel.lead_time;
+    const leadAvailable = lead.status === 'available' && lead.median_seconds !== null;
+    return {
+      trained: true,
+      modelName: 'Random Forest',
+      modelSubtext: 'trained on simulated traffic',
+      accuracy: `${accuracyPct.toFixed(1)}%`,
+      accuracyNote: `simulated test · n=${simulatedModel.split.test_rows}`,
+      accuracyBarPct: accuracyPct,
+      leadTime: leadAvailable ? `${lead.median_seconds!.toFixed(1)}s` : '—',
+      leadTimeNote: leadAvailable ? 'median · simulated' : LEAD_TIME_REASONS[lead.reason ?? ''] ?? 'unavailable',
+    };
+  }
+
   if (dataMode !== 'real-telemetry') {
     return {
       trained: false,

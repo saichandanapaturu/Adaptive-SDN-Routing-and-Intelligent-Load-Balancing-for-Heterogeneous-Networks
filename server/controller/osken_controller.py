@@ -28,7 +28,7 @@ try:
     from server.controller.telemetry_api import TelemetryApiState, TelemetryService
     from server.controller.telemetry_store import TelemetryStore
 except ImportError:
-    # Supports launching the file directly through osken-manager from its
+    # Supports loading the app by file path (as osken-manager did) from its
     # controller directory, where that directory is placed on sys.path.
     from congestion_model import CongestionPredictor
     from statistics import OpenFlowStatisticsCollector
@@ -217,10 +217,5 @@ class AIFEController(app_manager.OSKenApp):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-    from os_ken.cmd import manager
-
-    manager.main()
+    # OS-Ken 4 removed os_ken.cmd.manager; run_controller launches this app.
+    raise SystemExit("Start the controller with: PYTHONPATH=. python3 -m server.controller.run_controller")

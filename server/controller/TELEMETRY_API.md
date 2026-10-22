@@ -61,14 +61,38 @@ Congestion policy, defined in `congestion_model.py`:
 - A **warning** is a prediction with P(congested within horizon) ≥ 0.5.
 - Features use the port's last 5 measured samples at or before t (TX/RX utilization, TX mean/max/delta/slope, drop delta, packet rates). Windows never span a gap > 3 s, and the first sample after a gap is discarded because its rates were not measured.
 
-Collect telemetry, then train (requires `pip install -r server/requirements-ml.txt`):
+Collect real telemetry and train in one step from WSL (Ubuntu 22.04
+recommended; prompts once for sudo):
 
 ```bash
-# With the controller and Mininet running, create bursts above 8 Mbit/s:
-#   mininet> iperf h1 h3        # or: h3 iperf -s &  then  h1 iperf -c 10.0.0.3 -b 9M -t 20
-# Alternate idle periods and bursts for several minutes, then:
-PYTHONPATH=. python3 -m server.controller.congestion_model train
+bash scripts/train_on_mininet.sh            # MINUTES=40 for a longer run
 ```
+
+It installs OS-Ken and scikit-learn into `~/.aife-venv`, starts the
+controller, runs `mininet/collect_traffic.py` (UDP iperf ramps and bursts past
+8 Mbit/s, abrupt bursts, and loads below the threshold, separated by idle
+periods), and then trains. To train manually after collecting telemetry some
+other way: `PYTHONPATH=. python3 -m server.controller.congestion_model train`.
+
+### Simulated-traffic model (deployed dashboard)
+
+The deployed dashboard has no controller, so its simulated views (the
+reference topology shown when no controller is connected, and custom and
+generated topologies) use a second model trained on simulated traffic:
+
+```bash
+python3 -m server.controller.simulated_training   # writes client/public/models/congestion_rf_simulated.json
+```
+
+`simulated_training.py` reproduces the dashboard's per-link traffic dynamics
+(base drift and bursts, flow-route hotspots, peak-hour load floors, and Traffic
+Surge Simulator surges), then runs the same labeling, chronological split,
+accuracy, and lead-time code as above. The forest (60 trees, depth ≤ 10) is
+exported as JSON and evaluated in the browser by
+`client/src/lib/simulatedCongestionModel.ts`; tests check that browser features
+and probabilities match Python and scikit-learn exactly. The cards label its
+scores "simulated": they measure prediction of simulated traffic, not a real
+network. Predicted Hotspots lists links with P(congested within 10 s) ≥ 0.5.
 
 Training refuses to produce a model (exit code 2, JSON reason) when there are
 fewer than 250 labeled rows, or when either split lacks enough congested and
@@ -100,8 +124,8 @@ predictions change; that is not implemented.
 From the project root on Ubuntu/WSL, after installing OS-Ken, Mininet, and Open vSwitch:
 
 ```bash
-# Terminal 1: controller + telemetry API
-PYTHONPATH=. osken-manager server/controller/osken_controller.py
+# Terminal 1: controller + telemetry API (OS-Ken 4 removed osken-manager)
+PYTHONPATH=. python3 -m server.controller.run_controller
 
 # Terminal 2: Mininet topology
 sudo python3 mininet/topology.py

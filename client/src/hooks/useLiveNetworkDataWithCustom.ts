@@ -19,6 +19,13 @@ import {
 } from '@/lib/telemetryApi';
 import { simulatedLinkTraffic } from '@/lib/peakHours';
 import {
+  LinkCongestionRisk,
+  LinkSample,
+  loadSimulatedCongestionModel,
+  SimulatedCongestionModel,
+  updateLinkRisks,
+} from '@/lib/simulatedCongestionModel';
+import {
   congestionReroutePath,
   findAvailablePath,
   linkEndpointNames,
@@ -319,6 +326,8 @@ export function useLiveNetworkDataWithCustom() {
   const [connectedSwitches, setConnectedSwitches] = useState<TelemetrySwitch[]>([]);
   const [controllerFlows, setControllerFlows] = useState<TelemetryForwardedFlow[]>([]);
   const [modelStatus, setModelStatus] = useState<TelemetryModelStatus | null>(null);
+  const [simulatedModel, setSimulatedModel] = useState<SimulatedCongestionModel | null>(null);
+  const [linkRisks, setLinkRisks] = useState<LinkCongestionRisk[]>([]);
   const [lastTelemetryUpdate, setLastTelemetryUpdate] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const failedEdgesRef = useRef<Set<string>>(new Set());
@@ -329,6 +338,8 @@ export function useLiveNetworkDataWithCustom() {
   const peakHoursRef = useRef(peakHours);
   const simulatedMinuteRef = useRef(simulatedMinute);
   const trafficOverlayRef = useRef(trafficOverlay);
+  const simulatedModelRef = useRef<SimulatedCongestionModel | null>(null);
+  const linkHistoryRef = useRef(new Map<string, LinkSample[]>());
   const packetFlowsRef = useRef<PacketFlow[]>([]);
   const predictionsRef = useRef<PredictionData[]>([buildPrediction(activeLinks)]);
   const tickRef = useRef(0);
@@ -343,6 +354,18 @@ export function useLiveNetworkDataWithCustom() {
     nodesRef.current = nodes;
   }, [nodes]);
 
+  useEffect(() => {
+    if (activeMode === 'default') return;
+    let cancelled = false;
+    void loadSimulatedCongestionModel().then(model => {
+      if (cancelled) return;
+      simulatedModelRef.current = model;
+      setSimulatedModel(model);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMode]);
   useEffect(() => {
     linksRef.current = links;
   }, [links]);
@@ -378,6 +401,8 @@ export function useLiveNetworkDataWithCustom() {
     setModelStatus(null);
     // A surge targets an edge of the previous topology; the simulator re-targets on its next tick.
     setTrafficOverlay(null);
+    linkHistoryRef.current = new Map();
+    setLinkRisks([]);
     setLastTelemetryUpdate(null);
     tickRef.current = 0;
     setTick(0);
@@ -597,6 +622,9 @@ export function useLiveNetworkDataWithCustom() {
       setLinks(nextLinks);
       setNodes(nextNodes);
       setPortStats(previous => buildPortStats(nextNodes, nextLinks, previous));
+      if (simulatedModelRef.current) {
+        setLinkRisks(updateLinkRisks(simulatedModelRef.current, linkHistoryRef.current, nextLinks, Date.now() / 1000));
+      }
 
       const nextPrediction = buildPrediction(nextLinks, predictionsRef.current[0]);
       const nextPredictions = [nextPrediction, ...predictionsRef.current.slice(0, 19)];
@@ -732,6 +760,9 @@ export function useLiveNetworkDataWithCustom() {
     connectedSwitches,
     controllerFlows,
     modelStatus,
+    // The simulated-traffic model applies to simulated views only.
+    simulatedModel: activeMode === 'default' ? null : simulatedModel,
+    linkRisks: activeMode === 'default' ? [] : linkRisks,
     lastTelemetryUpdate,
   };
 }
