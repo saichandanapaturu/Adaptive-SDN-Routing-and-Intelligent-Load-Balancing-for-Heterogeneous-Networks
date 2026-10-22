@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { NetworkLink, NetworkNode, PacketFlow } from '@/hooks/useLiveNetworkData';
 import {
+  applyLoadShifts,
+  routeTrafficShare,
+  balanceAtRiskLinks,
   canAnimatePacketFlow,
   congestionReroutePath,
   findAvailablePath,
@@ -190,5 +193,56 @@ describe('congestion rerouting', () => {
   it('never routes through a failed link', () => {
     const links = diamond(95).map(item => (item.source === 's1' && item.target === 's3' ? { ...item, status: 'failed' as const } : item));
     expect(congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), links)).toBeNull();
+  });
+});
+describe('at-risk link load balancing', () => {
+  const loaded = (source: string, target: string, trafficLevel: number): NetworkLink => ({
+    source,
+    target,
+    bandwidth: 10,
+    trafficLevel,
+    status: trafficLevel >= 86 ? 'critical' : trafficLevel >= 68 ? 'warning' : 'healthy',
+  });
+  const square = (s1s2: number) => [
+    loaded('h1', 's1', 30), loaded('s1', 's2', s1s2), loaded('s2', 's4', 20),
+    loaded('s1', 's3', 10), loaded('s3', 's4', 30), loaded('s4', 'h2', 25),
+  ];
+
+  it('moves load off an at-risk link onto its least-loaded alternate until they match', () => {
+    const links = square(94);
+    const { shifts, unbalanced } = balanceAtRiskLinks(links);
+    expect(unbalanced).toEqual([]);
+    expect(shifts).toEqual([{ source: 's1', target: 's2', path: ['s1', 's3', 's4', 's2'], amount: 32 }]);
+    const balanced = applyLoadShifts(links, shifts);
+    const level = (a: string, b: string) => balanced.find(link => link.source === a && link.target === b)!.trafficLevel;
+    expect(level('s1', 's2')).toBe(62);
+    expect([level('s1', 's3'), level('s3', 's4'), level('s2', 's4')]).toEqual([42, 62, 52]);
+    expect(level('h1', 's1')).toBe(30);
+  });
+
+  it('balances only at-risk links', () => {
+    expect(balanceAtRiskLinks(square(80))).toEqual({ shifts: [], unbalanced: [] });
+  });
+
+  it('reports at-risk links with no alternate or only busy alternates, and skips pinned links', () => {
+    const access = square(10).map(link => (link.source === 'h1' ? loaded('h1', 's1', 97) : link));
+    expect(balanceAtRiskLinks(access)).toEqual({ shifts: [], unbalanced: [{ source: 'h1', target: 's1' }] });
+    expect(balanceAtRiskLinks(square(94), new Set(['s1::s2']))).toEqual({ shifts: [], unbalanced: [] });
+    const busy = square(94).map(link => (link.source === 's3' ? loaded('s3', 's4', 88) : link));
+    expect(balanceAtRiskLinks(busy).shifts).toEqual([]);
+    expect(balanceAtRiskLinks(busy).unbalanced).toContainEqual({ source: 's1', target: 's2' });
+  });
+
+  it('never uses a failed link as the alternate', () => {
+    const links = square(94).map(link => (link.source === 's1' && link.target === 's3' ? { ...link, status: 'failed' as const } : link));
+    expect(balanceAtRiskLinks(links).shifts).toEqual([]);
+  });
+
+  it('splits the route traffic of a pair across the paths its flows use', () => {
+    const pairFlow = (id: string, path: string[]): PacketFlow => ({ ...flow(path), id, source: 'h1', destination: 'h2' });
+    const one = routeTrafficShare([pairFlow('a', ['h1', 's1', 's2', 'h2']), pairFlow('b', ['h1', 's1', 's2', 'h2'])]);
+    expect(one.get('s1::s2')).toBe(1);
+    const split = routeTrafficShare([pairFlow('a', ['h1', 's1', 's2', 'h2']), pairFlow('b', ['h1', 's1', 's3', 's2', 'h2'])]);
+    expect([split.get('h1::s1'), split.get('s1::s2'), split.get('s1::s3'), split.get('s2::s3')]).toEqual([1, 0.5, 0.5, 0.5]);
   });
 });

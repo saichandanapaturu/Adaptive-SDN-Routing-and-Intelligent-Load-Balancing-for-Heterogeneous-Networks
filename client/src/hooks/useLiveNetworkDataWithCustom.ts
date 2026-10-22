@@ -32,14 +32,18 @@ import {
   updateLiveEvaluation,
 } from '@/lib/liveModelEvaluation';
 import {
+  applyLoadShifts,
+  balanceAtRiskLinks,
   congestionReroutePath,
   findAvailablePath,
   isAtRiskLink,
   linkEndpointNames,
   linkFailureTransitions,
+  LoadBalancingShift,
   networkEdgeKey as edgeKey,
   pathContainsFailedLink,
   reconcilePacketFlowForFailures,
+  routeTrafficShare,
   snapshotLinkFailures,
 } from '@/lib/networkRouting';
 import { toast } from 'sonner';
@@ -139,6 +143,32 @@ function rerouteEventForFlow(
     reason,
     oldPath: flow.path.map(nodeId => labels.get(nodeId) ?? nodeId),
     newPath: newPath.map(nodeId => labels.get(nodeId) ?? nodeId),
+  };
+}
+
+function loadBalancingEvent(shift: LoadBalancingShift, nodes: NetworkNode[]): RerouteEvent {
+  const labels = new Map(nodes.map(node => [node.id, node.label]));
+  return {
+    id: `balance-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: new Date(),
+    source: labels.get(shift.source) ?? shift.source,
+    destination: labels.get(shift.target) ?? shift.target,
+    reason: 'Load Balancing',
+    oldPath: [shift.source, shift.target].map(nodeId => labels.get(nodeId) ?? nodeId),
+    newPath: shift.path.map(nodeId => labels.get(nodeId) ?? nodeId),
+  };
+}
+
+function noAlternatePathEvent(link: { source: string; target: string }, nodes: NetworkNode[]): RerouteEvent {
+  const labels = new Map(nodes.map(node => [node.id, node.label]));
+  return {
+    id: `at-risk-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: new Date(),
+    source: labels.get(link.source) ?? link.source,
+    destination: labels.get(link.target) ?? link.target,
+    reason: 'No Alternate Path',
+    oldPath: [link.source, link.target].map(nodeId => labels.get(nodeId) ?? nodeId),
+    newPath: [],
   };
 }
 
@@ -349,6 +379,7 @@ export function useLiveNetworkDataWithCustom() {
   const simulatedModelRef = useRef<SimulatedCongestionModel | null>(null);
   const linkHistoryRef = useRef(new Map<string, LinkSample[]>());
   const liveEvaluationRef = useRef(createLiveEvaluation());
+  const unrelievedAtRiskRef = useRef(new Set<string>());
   const packetFlowsRef = useRef<PacketFlow[]>([]);
   const predictionsRef = useRef<PredictionData[]>([buildPrediction(activeLinks)]);
   const tickRef = useRef(0);
@@ -414,6 +445,7 @@ export function useLiveNetworkDataWithCustom() {
     setLinkRisks([]);
     liveEvaluationRef.current = createLiveEvaluation();
     setLiveEvaluation(null);
+    unrelievedAtRiskRef.current = new Set();
     setLastTelemetryUpdate(null);
     tickRef.current = 0;
     setTick(0);
@@ -600,26 +632,48 @@ export function useLiveNetworkDataWithCustom() {
     const interval = window.setInterval(() => {
       const currentNodes = nodesRef.current;
       const currentLinks = baseLinksRef.current;
-      const activeRouteEdges = new Set(packetFlowsRef.current
-        .filter(flow => flow.status !== 'blocked' && !pathContainsFailedLink(flow.path, currentLinks))
-        .flatMap(flow => pathEdgeKeys(flow.path)));
+      // A pair's route burst is split across the paths its flows use, so
+      // balancing flows across paths also spreads their load.
+      const routeShare = routeTrafficShare(packetFlowsRef.current
+        .filter(flow => flow.status !== 'blocked' && !pathContainsFailedLink(flow.path, currentLinks)));
       const forecastHotspot = tickRef.current % 8 >= 5;
       const nextBaseLinks = currentLinks.map(link => {
         if (link.status === 'failed') return { ...link, trafficLevel: 0 };
         const drift = (Math.random() - 0.5) * 18;
         const burst = Math.random() < 0.18 ? 24 : 0;
-        const predictedRouteBurst = forecastHotspot && activeRouteEdges.has(edgeKey(link.source, link.target)) ? 84 : 0;
+        const predictedRouteBurst = forecastHotspot ? 84 * (routeShare.get(edgeKey(link.source, link.target)) ?? 0) : 0;
         const trafficLevel = clamp(link.trafficLevel * 0.58 + drift + burst + predictedRouteBurst);
         return { ...link, trafficLevel, status: statusForTraffic(trafficLevel) };
       });
-      baseLinksRef.current = nextBaseLinks;
-      const nextLinks = simulatedLinkTraffic(
-        nextBaseLinks,
+      const displayedTraffic = (base: NetworkLink[]) => simulatedLinkTraffic(
+        base,
         peakHoursRef.current,
         simulatedMinuteRef.current,
         trafficOverlayRef.current,
         true,
       ).map(statusForLink);
+      // Load balancing: at-risk links shed load onto their least-loaded
+      // alternate path. The surge simulator's link is pinned to its surge
+      // level and logs its own reroutes.
+      const surgeEdge = trafficOverlayRef.current?.edge;
+      const balancing = balanceAtRiskLinks(displayedTraffic(nextBaseLinks), new Set(surgeEdge ? [surgeEdge] : []));
+      const balancedBaseLinks = applyLoadShifts(nextBaseLinks, balancing.shifts)
+        .map(link => (link.status === 'failed' ? link : { ...link, status: statusForTraffic(link.trafficLevel) }));
+      baseLinksRef.current = balancedBaseLinks;
+      const nextLinks = displayedTraffic(balancedBaseLinks);
+      const balancingEvents = balancing.shifts.map(shift => loadBalancingEvent(shift, currentNodes));
+      // At-risk links that no alternate path can relieve are logged once
+      // each time they become at-risk.
+      const stillAtRisk = new Set(nextLinks.filter(isAtRiskLink).map(link => edgeKey(link.source, link.target)));
+      Array.from(unrelievedAtRiskRef.current).forEach(edge => {
+        if (!stillAtRisk.has(edge)) unrelievedAtRiskRef.current.delete(edge);
+      });
+      balancing.unbalanced.forEach(link => {
+        const edge = edgeKey(link.source, link.target);
+        if (!stillAtRisk.has(edge) || unrelievedAtRiskRef.current.has(edge)) return;
+        unrelievedAtRiskRef.current.add(edge);
+        balancingEvents.push(noAlternatePathEvent(link, currentNodes));
+      });
       const nextNodes = currentNodes.map(node => {
         const incident = nextLinks.filter(link => link.source === node.id || link.target === node.id);
         const trafficLevel = incident.length > 0
@@ -654,6 +708,16 @@ export function useLiveNetworkDataWithCustom() {
         || nextPrediction.predictedPacketLoss >= 1.4
         || nextPrediction.trend === 'increasing';
       const reroutes: RerouteEvent[] = [];
+      // Flows of a pair per path. A congested flow moves only while its path
+      // carries more of the pair's flows than the alternate, so the pair's
+      // flows split across paths instead of all switching together.
+      const pathFlowCounts = new Map<string, number>();
+      const pairPathKey = (flow: PacketFlow, path: string[]) => `${flow.source}->${flow.destination}|${path.join('>')}`;
+      packetFlowsRef.current.forEach(flow => {
+        if (flow.status === 'blocked') return;
+        const key = pairPathKey(flow, flow.path);
+        pathFlowCounts.set(key, (pathFlowCounts.get(key) ?? 0) + 1);
+      });
       const updated = packetFlowsRef.current
         .map(flow => {
           const reconciledFlow = reconcilePacketFlowForFailures(flow, nextLinks, now);
@@ -666,7 +730,11 @@ export function useLiveNetworkDataWithCustom() {
           if (progress >= 100) return null;
 
           const reroute = congestionReroutePath(currentFlow, nextLinks, predictionPressure);
-          if (reroute) {
+          const fromKey = pairPathKey(currentFlow, currentFlow.path);
+          const toKey = reroute ? pairPathKey(currentFlow, reroute.path) : '';
+          if (reroute && (pathFlowCounts.get(fromKey) ?? 0) > (pathFlowCounts.get(toKey) ?? 0)) {
+            pathFlowCounts.set(fromKey, (pathFlowCounts.get(fromKey) ?? 0) - 1);
+            pathFlowCounts.set(toKey, (pathFlowCounts.get(toKey) ?? 0) + 1);
             reroutes.push(rerouteEventForFlow(currentFlow, reroute.path, nextNodes, reroute.reason));
             return {
               ...currentFlow,
@@ -681,8 +749,13 @@ export function useLiveNetworkDataWithCustom() {
         })
         .filter((flow): flow is PacketFlow => Boolean(flow));
 
-      if (reroutes.length > 0) {
-        setRerouteEvents(previous => [...reroutes, ...previous].slice(0, 12));
+      // Flows of one pair moved the same way in one tick are logged once.
+      const tickEvents = [...reroutes, ...balancingEvents].filter((event, index, events) => {
+        const key = `${event.reason}|${event.source}|${event.destination}|${event.oldPath.join('>')}|${event.newPath.join('>')}`;
+        return events.findIndex(other => `${other.reason}|${other.source}|${other.destination}|${other.oldPath.join('>')}|${other.newPath.join('>')}` === key) === index;
+      });
+      if (tickEvents.length > 0) {
+        setRerouteEvents(previous => [...tickEvents, ...previous].slice(0, 12));
       }
 
       // With no route selected, traffic runs between random host pairs so that
