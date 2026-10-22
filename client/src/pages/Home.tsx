@@ -372,7 +372,7 @@ export default function Home() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-slate-400 mb-1.5">At-Risk Links</p>
-                <p className="font-mono text-3xl font-semibold text-red-400">{stats.failedLinks}</p>
+                <p className="font-mono text-3xl font-semibold text-red-400">{stats.atRiskLinks}</p>
               </div>
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/40 bg-red-500/10 text-red-400">
                 <XCircle className="h-4 w-4" />

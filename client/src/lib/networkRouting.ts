@@ -15,6 +15,11 @@ export function pathContainsFailedLink(path: string[], links: NetworkLink[]): bo
   );
 }
 
+/** Links the topology draws red (linkStrokeColor): failed or critically loaded. */
+export function isAtRiskLink(link: Pick<NetworkLink, 'status'>): boolean {
+  return link.status === 'failed' || link.status === 'critical';
+}
+
 export function canAnimatePacketFlow(flow: PacketFlow, links: NetworkLink[]): boolean {
   return flow.status !== 'blocked'
     && flow.path.length > 1
@@ -72,10 +77,11 @@ export interface CongestionReroute {
 /**
  * Alternate route for a flow whose path crosses congested links, or null.
  *
- * Only the congested links are excluded; the rest of the current path (such
- * as a host's single access link) stays usable. The alternate's busiest link
- * must be less loaded than the current path's, so traffic is not moved onto
- * an equally congested route.
+ * Only the congested links are excluded, and only those the flow can route
+ * around: a link every route needs (such as a host's single access link) stays
+ * usable even when congested. The links the alternate uses instead must be
+ * less loaded than the ones it replaces, so traffic is not moved onto an
+ * equally congested route.
  */
 export function congestionReroutePath(
   flow: PacketFlow,
@@ -86,16 +92,19 @@ export function congestionReroutePath(
   const pathEdges = (path: string[]) => path.slice(0, -1).map((node, index) => networkEdgeKey(node, path[index + 1]));
   const isCongested = (link: NetworkLink) => link.status !== 'failed'
     && (link.trafficLevel >= CONGESTED_TRAFFIC_LEVEL || link.status === 'warning' || link.status === 'critical');
+  const avoidable = (key: string) => findAvailablePath(flow.source, flow.destination, links, new Set([key])).length > 1;
 
+  const currentEdges = pathEdges(flow.path);
   const avoid = new Set<string>();
   let congestionOnPath = false;
-  pathEdges(flow.path).forEach(key => {
+  currentEdges.forEach(key => {
     const link = linkByEdge.get(key);
     if (!link) return;
     if (isCongested(link)) {
+      if (!avoidable(key)) return;
       congestionOnPath = true;
       avoid.add(key);
-    } else if (predictionPressure && link.status !== 'failed' && link.trafficLevel >= FORECAST_PRESSURE_TRAFFIC_LEVEL) {
+    } else if (predictionPressure && link.status !== 'failed' && link.trafficLevel >= FORECAST_PRESSURE_TRAFFIC_LEVEL && avoidable(key)) {
       avoid.add(key);
     }
   });
@@ -105,8 +114,11 @@ export function congestionReroutePath(
   if (alternate.length < 2) return null;
   if (alternate.length === flow.path.length && alternate.every((node, index) => node === flow.path[index])) return null;
 
-  const busiest = (path: string[]) => Math.max(0, ...pathEdges(path).map(key => linkByEdge.get(key)?.trafficLevel ?? 0));
-  if (busiest(alternate) >= busiest(flow.path)) return null;
+  const alternateEdges = pathEdges(alternate);
+  const busiest = (edges: string[]) => Math.max(0, ...edges.map(key => linkByEdge.get(key)?.trafficLevel ?? 0));
+  const replaced = currentEdges.filter(key => !alternateEdges.includes(key));
+  const added = alternateEdges.filter(key => !currentEdges.includes(key));
+  if (busiest(added) >= busiest(replaced)) return null;
   return { path: alternate, reason: congestionOnPath ? 'Congestion Detected' : 'Load Balancing' };
 }
 

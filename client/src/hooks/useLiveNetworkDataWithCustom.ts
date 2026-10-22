@@ -34,6 +34,7 @@ import {
 import {
   congestionReroutePath,
   findAvailablePath,
+  isAtRiskLink,
   linkEndpointNames,
   linkFailureTransitions,
   networkEdgeKey as edgeKey,
@@ -747,6 +748,7 @@ export function useLiveNetworkDataWithCustom() {
       : countPacketActiveLinks(links, packetFlows),
     congestedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'warning' || link.status === 'critical').length,
     failedLinks: links.filter(link => link.status === 'failed').length,
+    atRiskLinks: links.filter(isAtRiskLink).length,
     maxTraffic: Math.max(...links.map(link => link.trafficLevel), 0),
     avgTraffic: links.length > 0 ? links.reduce((sum, link) => sum + link.trafficLevel, 0) / links.length : 0,
     activeNodes: activeMode === 'default' ? connectedSwitches.length : nodes.filter(node => node.status === 'healthy').length,

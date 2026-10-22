@@ -4,6 +4,7 @@ import {
   canAnimatePacketFlow,
   congestionReroutePath,
   findAvailablePath,
+  isAtRiskLink,
   linkEndpointNames,
   linkFailureTransitions,
   pathContainsFailedLink,
@@ -30,6 +31,12 @@ function flow(path: string[], status: PacketFlow['status'] = 'active'): PacketFl
 }
 
 describe('failed-link routing', () => {
+  it('counts as at-risk exactly the links drawn red', () => {
+    for (const status of ['healthy', 'warning', 'critical', 'failed'] as const) {
+      expect(isAtRiskLink({ status })).toBe(linkStrokeColor(status, false) === linkStrokeColor('failed', false));
+    }
+  });
+
   it('keeps failed links red even when a flow route would otherwise highlight them', () => {
     expect(linkStrokeColor('failed', true)).toBe('#ef4444');
     expect(linkStrokeColor('critical', true)).toBe('#ef4444');
@@ -161,6 +168,23 @@ describe('congestion rerouting', () => {
   it('uses forecast pressure to pre-emptively balance a busy but uncongested link', () => {
     const reroute = congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), diamond(60), true);
     expect(reroute).toEqual({ path: ['h1', 's1', 's3', 's4', 'h2'], reason: 'Load Balancing' });
+  });
+
+  it('reroutes when the host access links are congested along with the core link', () => {
+    // The simulator loads every link of an active route, access links included.
+    const links = diamond(95).map(item => (item.source === 'h1' || item.target === 'h2' ? loaded(item.source, item.target, 92) : item));
+    expect(congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), links)).toEqual({
+      path: ['h1', 's1', 's3', 's4', 'h2'],
+      reason: 'Congestion Detected',
+    });
+  });
+
+  it('load-balances off a busy core link even when the shared access link is busier', () => {
+    const links = diamond(60).map(item => (item.source === 'h1' ? loaded('h1', 's1', 75) : item));
+    expect(congestionReroutePath(hostFlow(['h1', 's1', 's2', 's4', 'h2']), links, true)).toEqual({
+      path: ['h1', 's1', 's3', 's4', 'h2'],
+      reason: 'Load Balancing',
+    });
   });
 
   it('never routes through a failed link', () => {
