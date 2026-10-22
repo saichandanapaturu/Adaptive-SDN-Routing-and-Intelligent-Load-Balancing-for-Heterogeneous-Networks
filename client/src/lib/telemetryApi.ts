@@ -1,3 +1,5 @@
+import type { LiveEvaluationSummary } from './liveModelEvaluation';
+
 export type TelemetryDataStatus = 'unavailable' | 'fresh' | 'stale';
 
 export interface TelemetryHealth {
@@ -111,6 +113,8 @@ export interface TelemetryModelStatus {
     f1: number;
   };
   lead_time?: TelemetryLeadTime;
+  /** Rolling score of the controller's live predictions; null when malformed. */
+  live_evaluation?: LiveEvaluationSummary | null;
 }
 
 export interface TelemetrySnapshot {
@@ -238,6 +242,14 @@ function isLeadTime(value: unknown): value is TelemetryLeadTime {
   return value.status === 'unavailable';
 }
 
+function isLiveEvaluation(value: unknown): value is LiveEvaluationSummary {
+  if (!isRecord(value)) return false;
+  const { accuracy, median_lead_seconds: lead } = value;
+  return isFiniteNumber(value.scored) && isFiniteNumber(value.events_evaluated) && isFiniteNumber(value.events_warned)
+    && (accuracy === null || isProbability(accuracy))
+    && (lead === null || (isFiniteNumber(lead) && lead >= 0));
+}
+
 function isModelStatus(value: unknown): value is TelemetryModelStatus {
   if (!isRecord(value) || value.model_type !== 'random_forest') return false;
   if (value.status === 'unavailable') return true;
@@ -352,7 +364,8 @@ export async function fetchModelStatus(options?: { timeoutMs?: number; baseUrl?:
   try {
     const body = await getJson('/api/telemetry/model', controller.signal, options?.baseUrl ?? apiBaseUrl());
     if (!isModelStatus(body)) throw new TelemetryApiError('Telemetry model response is malformed.', 'malformed');
-    return body;
+    // Optional: an older controller omits it, and a malformed one is not shown.
+    return { ...body, live_evaluation: isLiveEvaluation(body.live_evaluation) ? body.live_evaluation : null };
   } finally {
     globalThis.clearTimeout(timeout);
   }

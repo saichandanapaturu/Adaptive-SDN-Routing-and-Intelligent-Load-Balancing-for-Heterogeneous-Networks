@@ -66,10 +66,36 @@ describe('prediction card metrics', () => {
       accuracy: '91.3%',
       accuracyNote: 'simulated test · n=412',
       leadTime: '4.3s',
-      leadTimeNote: 'median · simulated',
+      leadTimeNote: 'median · simulated test',
     });
     // Live controller mode never shows the simulated model's scores.
     expect(predictionCardMetrics('real-telemetry', null, simulated)).toMatchObject({ trained: false, accuracy: '—' });
+  });
+
+  it('switches to the rolling live score once enough predictions are scored', () => {
+    const live = { window_predictions: 600, scored: 120, accuracy: 0.875, events_evaluated: 8, events_warned: 6, median_lead_seconds: 3.5 };
+    expect(predictionCardMetrics('real-telemetry', { ...trained(), live_evaluation: live })).toMatchObject({
+      accuracy: '87.5%',
+      accuracyNote: 'live · last n=120',
+      accuracyBarPct: 87.5,
+      leadTime: '3.5s',
+      leadTimeNote: 'median · live 6/8 warned',
+    });
+    const status = trained();
+    const simulated = { evaluation: status.evaluation!, lead_time: status.lead_time!, split: status.split! };
+    expect(predictionCardMetrics('illustrative', null, simulated, live)).toMatchObject({
+      accuracy: '87.5%',
+      accuracyNote: 'live simulated · last n=120',
+      leadTimeNote: 'median · live simulated 6/8 warned',
+    });
+    // Too few scored predictions and no warned onsets yet: the test scores remain.
+    const warming = { ...live, scored: 12, accuracy: null, events_warned: 0, median_lead_seconds: null };
+    expect(predictionCardMetrics('illustrative', null, simulated, warming)).toMatchObject({
+      accuracy: '91.3%',
+      accuracyNote: 'simulated test · n=412',
+      leadTime: '4.3s',
+      leadTimeNote: 'median · simulated test',
+    });
   });
 
   it('never presents illustrative topologies as model results', () => {

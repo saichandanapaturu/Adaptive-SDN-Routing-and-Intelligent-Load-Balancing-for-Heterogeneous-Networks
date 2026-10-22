@@ -6,6 +6,7 @@ import { predictionCardMetrics } from '@/lib/modelMetrics';
 import { findAvailablePath, networkEdgeKey } from '@/lib/networkRouting';
 import type { TelemetryModelStatus } from '@/lib/telemetryApi';
 import { LinkCongestionRisk, SimulatedCongestionModel, WARNING_PROBABILITY } from '@/lib/simulatedCongestionModel';
+import type { LiveEvaluationSummary } from '@/lib/liveModelEvaluation';
 
 interface PredictionPanelProps {
   predictions: PredictionData[];
@@ -15,9 +16,10 @@ interface PredictionPanelProps {
   modelStatus?: TelemetryModelStatus | null;
   simulatedModel?: SimulatedCongestionModel | null;
   linkRisks?: LinkCongestionRisk[];
+  liveEvaluation?: LiveEvaluationSummary | null;
 }
 
-export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, links, rerouteEvents, dataMode = 'illustrative', modelStatus, simulatedModel, linkRisks = [] }) => {
+export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, links, rerouteEvents, dataMode = 'illustrative', modelStatus, simulatedModel, linkRisks = [], liveEvaluation }) => {
   const isRealTelemetryMode = dataMode === 'real-telemetry';
   const [utcTime, setUtcTime] = useState<string>('');
 
@@ -46,10 +48,10 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
     timestamp: new Date(),
   };
 
-  // 1. Model metrics: held-out evaluation reported by the controller, or by
-  // the simulated-traffic model in simulated views
+  // 1. Model metrics: rolling live score, else held-out test, of the controller's
+  // model, or of the simulated-traffic model in simulated views
   const usesSimulatedModel = !isRealTelemetryMode && Boolean(simulatedModel);
-  const metrics = predictionCardMetrics(dataMode, modelStatus, usesSimulatedModel ? simulatedModel : null);
+  const metrics = predictionCardMetrics(dataMode, modelStatus, usesSimulatedModel ? simulatedModel : null, liveEvaluation);
   const { modelName, modelSubtext, leadTime } = metrics;
   const accuracyPct = metrics.accuracy;
   const accuracyChange = metrics.accuracyNote;

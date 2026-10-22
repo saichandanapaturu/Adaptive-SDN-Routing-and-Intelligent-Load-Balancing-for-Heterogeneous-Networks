@@ -1,5 +1,6 @@
+import type { LiveEvaluationSummary } from './liveModelEvaluation';
 import type { SimulatedCongestionModel } from './simulatedCongestionModel';
-import type { TelemetryModelStatus } from './telemetryApi';
+import type { TelemetryLeadTime, TelemetryModelStatus } from './telemetryApi';
 
 export interface PredictionCardMetrics {
   trained: boolean;
@@ -18,28 +19,62 @@ const LEAD_TIME_REASONS: Record<string, string> = {
 };
 
 /**
- * Card values for the Congestion Predictor. Only controller-reported
- * held-out evaluation is displayed; nothing is derived in the browser.
+ * Accuracy and lead time of a trained model: the rolling score of its live
+ * predictions once enough have been scored, otherwise its held-out test score.
+ */
+function scoredCards(
+  testAccuracy: number,
+  testNote: string,
+  testLead: TelemetryLeadTime,
+  testLeadLabel: string,
+  live: LiveEvaluationSummary | null | undefined,
+  liveLabel: string,
+): Pick<PredictionCardMetrics, 'accuracy' | 'accuracyNote' | 'accuracyBarPct' | 'leadTime' | 'leadTimeNote'> {
+  const liveAccuracy = live?.accuracy ?? null;
+  const accuracyPct = (liveAccuracy ?? testAccuracy) * 100;
+  const liveLead = live?.median_lead_seconds ?? null;
+  const testLeadAvailable = testLead.status === 'available' && testLead.median_seconds !== null;
+  let leadTime = '—';
+  let leadTimeNote = LEAD_TIME_REASONS[testLead.reason ?? ''] ?? 'unavailable';
+  if (liveLead !== null && live) {
+    leadTime = `${liveLead.toFixed(1)}s`;
+    leadTimeNote = `median · ${liveLabel} ${live.events_warned}/${live.events_evaluated} warned`;
+  } else if (testLeadAvailable) {
+    leadTime = `${testLead.median_seconds!.toFixed(1)}s`;
+    leadTimeNote = testLeadLabel;
+  }
+  return {
+    accuracy: `${accuracyPct.toFixed(1)}%`,
+    accuracyNote: liveAccuracy !== null && live ? `${liveLabel} · last n=${live.scored}` : testNote,
+    accuracyBarPct: accuracyPct,
+    leadTime,
+    leadTimeNote,
+  };
+}
+
+/**
+ * Card values for the Congestion Predictor: scores of the controller's model
+ * in live mode, or of the simulated-traffic model in simulated views.
  */
 export function predictionCardMetrics(
   dataMode: 'real-telemetry' | 'illustrative',
   modelStatus: TelemetryModelStatus | null | undefined,
   simulatedModel?: Pick<SimulatedCongestionModel, 'evaluation' | 'lead_time' | 'split'> | null,
+  simulatedLiveEvaluation?: LiveEvaluationSummary | null,
 ): PredictionCardMetrics {
   if (dataMode !== 'real-telemetry' && simulatedModel) {
-    // Scores of the model trained and tested on simulated dashboard traffic.
-    const accuracyPct = simulatedModel.evaluation.accuracy * 100;
-    const lead = simulatedModel.lead_time;
-    const leadAvailable = lead.status === 'available' && lead.median_seconds !== null;
     return {
       trained: true,
       modelName: 'Random Forest',
       modelSubtext: 'trained on simulated traffic',
-      accuracy: `${accuracyPct.toFixed(1)}%`,
-      accuracyNote: `simulated test · n=${simulatedModel.split.test_rows}`,
-      accuracyBarPct: accuracyPct,
-      leadTime: leadAvailable ? `${lead.median_seconds!.toFixed(1)}s` : '—',
-      leadTimeNote: leadAvailable ? 'median · simulated' : LEAD_TIME_REASONS[lead.reason ?? ''] ?? 'unavailable',
+      ...scoredCards(
+        simulatedModel.evaluation.accuracy,
+        `simulated test · n=${simulatedModel.split.test_rows}`,
+        simulatedModel.lead_time,
+        'median · simulated test',
+        simulatedLiveEvaluation,
+        'live simulated',
+      ),
     };
   }
 
@@ -69,17 +104,17 @@ export function predictionCardMetrics(
     };
   }
 
-  const accuracyPct = modelStatus.evaluation.accuracy * 100;
-  const lead = modelStatus.lead_time;
-  const leadAvailable = lead.status === 'available' && lead.median_seconds !== null;
   return {
     trained: true,
     modelName: 'Random Forest',
     modelSubtext: modelStatus.inference === 'ready' ? 'inference ready' : 'inference unavailable',
-    accuracy: `${accuracyPct.toFixed(1)}%`,
-    accuracyNote: `held-out test · n=${modelStatus.split?.test_rows ?? 0}`,
-    accuracyBarPct: accuracyPct,
-    leadTime: leadAvailable ? `${lead.median_seconds!.toFixed(1)}s` : '—',
-    leadTimeNote: leadAvailable ? 'median' : LEAD_TIME_REASONS[lead.reason ?? ''] ?? 'unavailable',
+    ...scoredCards(
+      modelStatus.evaluation.accuracy,
+      `held-out test · n=${modelStatus.split?.test_rows ?? 0}`,
+      modelStatus.lead_time,
+      'median',
+      modelStatus.live_evaluation,
+      'live',
+    ),
   };
 }

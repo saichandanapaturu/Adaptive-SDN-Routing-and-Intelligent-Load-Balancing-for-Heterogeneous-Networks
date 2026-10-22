@@ -104,7 +104,18 @@ uncongested rows. The running controller loads a new model file automatically.
 
 `GET /api/telemetry/model` returns `{"status": "unavailable", "reason": ...}`
 (for example `model_missing`) or the stored metrics plus `inference`
-(`ready` when the controller can predict).
+(`ready` when the controller can predict) and `live_evaluation`.
+
+`live_evaluation` scores the model's live predictions with the same policy:
+every port sample is predicted, each prediction is scored once its 10 s
+horizon has been observed, and each congestion onset whose warning window was
+fully observed counts toward lead time. It reports `scored` (last
+`window_predictions` = 600), `accuracy` (`null` until 50 are scored),
+`events_evaluated`, `events_warned` (last 40 onsets), and
+`median_lead_seconds`. It resets when the model file changes. The cards show
+these rolling values once available ("live · last n=…") and the held-out test
+values until then; simulated views do the same in the browser with the
+simulated model ("live simulated").
 
 ### Path selection
 

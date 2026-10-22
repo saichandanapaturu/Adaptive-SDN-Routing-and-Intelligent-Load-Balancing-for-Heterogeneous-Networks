@@ -168,6 +168,57 @@ class PredictorTests(TestCase):
             self.assertIsNone(predictor.probability(1, 2))
 
 
+class LiveEvaluationTests(TestCase):
+    def test_prediction_is_scored_only_after_its_horizon_is_observed(self) -> None:
+        live = cm.LiveEvaluation()
+        live.observe((1, 2), 0, 0.9, False)
+        live.observe((1, 2), 1, 0.1, False)
+        for t in range(2, 9):
+            live.observe((1, 2), t, None, t == 6)
+        self.assertEqual(live.summary()["scored"], 0)
+        live.observe((1, 2), 9, None, False)
+        live.observe((1, 2), 10, None, False)
+        self.assertEqual(list(live._scored), [True, False])
+
+    def test_lead_time_matches_the_backtest_policy(self) -> None:
+        live = cm.LiveEvaluation()
+        probabilities = {2: 0.9, 13: 0.4, 14: 0.7, 17: 0.8}
+        for t in range(21):
+            live.observe((1, 2), t, probabilities.get(t, 0.1), t in (3, 20))
+        summary = live.summary()
+        self.assertEqual((summary["events_evaluated"], summary["events_warned"]), (1, 1))
+        self.assertEqual(summary["median_lead_seconds"], 6)
+        self.assertIsNone(summary["accuracy"])
+
+    def test_predictor_reports_a_rolling_score_that_updates_with_new_samples(self) -> None:
+        model, metrics = cm.train_and_evaluate(cyclic_history(30))
+        profile = [0.05] * 12 + [0.1 + 0.1 * step for step in range(8)] + [0.92] * 5
+        with TemporaryDirectory() as directory:
+            cm.save_artifacts(model, metrics, Path(directory))
+            predictor = cm.CongestionPredictor(Path(directory))
+            collector = OpenFlowStatisticsCollector()
+            tx_bytes = 0.0
+            summaries = []
+            for second, utilization in enumerate(profile * 6):
+                tx_bytes += utilization * cm.LINK_CAPACITY_BPS / 8
+                counters = type("Counters", (), {
+                    "port_no": 2, "rx_packets": second, "tx_packets": second,
+                    "rx_bytes": int(tx_bytes / 2), "tx_bytes": int(tx_bytes),
+                    "rx_errors": 0, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0,
+                })()
+                predictor.observe(collector.process_port_stats(
+                    1, [counters],
+                    received_at=datetime.fromtimestamp(START + second, timezone.utc),
+                    received_monotonic=float(second),
+                ))
+                summaries.append(predictor.status()["live_evaluation"])
+        final = summaries[-1]
+        self.assertGreaterEqual(final["scored"], cm.MIN_LIVE_SCORED)
+        self.assertIsNotNone(final["accuracy"])
+        self.assertGreater(final["events_evaluated"], 0)
+        self.assertGreater(len({summary["scored"] for summary in summaries}), 1)
+
+
 class TelemetryStoreTests(TestCase):
     def test_store_round_trips_collector_samples(self) -> None:
         collector = OpenFlowStatisticsCollector()

@@ -26,6 +26,12 @@ import {
   updateLinkRisks,
 } from '@/lib/simulatedCongestionModel';
 import {
+  createLiveEvaluation,
+  LiveEvaluationSummary,
+  summarizeLiveEvaluation,
+  updateLiveEvaluation,
+} from '@/lib/liveModelEvaluation';
+import {
   congestionReroutePath,
   findAvailablePath,
   linkEndpointNames,
@@ -328,6 +334,7 @@ export function useLiveNetworkDataWithCustom() {
   const [modelStatus, setModelStatus] = useState<TelemetryModelStatus | null>(null);
   const [simulatedModel, setSimulatedModel] = useState<SimulatedCongestionModel | null>(null);
   const [linkRisks, setLinkRisks] = useState<LinkCongestionRisk[]>([]);
+  const [liveEvaluation, setLiveEvaluation] = useState<LiveEvaluationSummary | null>(null);
   const [lastTelemetryUpdate, setLastTelemetryUpdate] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const failedEdgesRef = useRef<Set<string>>(new Set());
@@ -340,6 +347,7 @@ export function useLiveNetworkDataWithCustom() {
   const trafficOverlayRef = useRef(trafficOverlay);
   const simulatedModelRef = useRef<SimulatedCongestionModel | null>(null);
   const linkHistoryRef = useRef(new Map<string, LinkSample[]>());
+  const liveEvaluationRef = useRef(createLiveEvaluation());
   const packetFlowsRef = useRef<PacketFlow[]>([]);
   const predictionsRef = useRef<PredictionData[]>([buildPrediction(activeLinks)]);
   const tickRef = useRef(0);
@@ -403,6 +411,8 @@ export function useLiveNetworkDataWithCustom() {
     setTrafficOverlay(null);
     linkHistoryRef.current = new Map();
     setLinkRisks([]);
+    liveEvaluationRef.current = createLiveEvaluation();
+    setLiveEvaluation(null);
     setLastTelemetryUpdate(null);
     tickRef.current = 0;
     setTick(0);
@@ -623,7 +633,11 @@ export function useLiveNetworkDataWithCustom() {
       setNodes(nextNodes);
       setPortStats(previous => buildPortStats(nextNodes, nextLinks, previous));
       if (simulatedModelRef.current) {
-        setLinkRisks(updateLinkRisks(simulatedModelRef.current, linkHistoryRef.current, nextLinks, Date.now() / 1000));
+        const ts = Date.now() / 1000;
+        const risks = updateLinkRisks(simulatedModelRef.current, linkHistoryRef.current, nextLinks, ts);
+        setLinkRisks(risks);
+        updateLiveEvaluation(liveEvaluationRef.current, nextLinks, risks, ts);
+        setLiveEvaluation(summarizeLiveEvaluation(liveEvaluationRef.current));
       }
 
       const nextPrediction = buildPrediction(nextLinks, predictionsRef.current[0]);
@@ -763,6 +777,8 @@ export function useLiveNetworkDataWithCustom() {
     // The simulated-traffic model applies to simulated views only.
     simulatedModel: activeMode === 'default' ? null : simulatedModel,
     linkRisks: activeMode === 'default' ? [] : linkRisks,
+    // Live mode reads the controller's rolling evaluation from modelStatus.
+    liveEvaluation: activeMode === 'default' ? null : liveEvaluation,
     lastTelemetryUpdate,
   };
 }

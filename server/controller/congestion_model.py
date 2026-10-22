@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -380,6 +381,92 @@ def save_artifacts(model: Any, metrics: Dict[str, Any], model_dir: Path) -> None
     (model_dir / METRICS_FILENAME).write_text(json.dumps(metrics, indent=2), encoding="utf-8")
 
 
+LIVE_SCORE_WINDOW = 600
+LIVE_ONSET_WINDOW = 40
+MIN_LIVE_SCORED = 50
+
+
+class LiveEvaluation:
+    """Rolling score of live predictions under the held-out test's policy.
+
+    Each prediction is scored once its horizon (t, t + horizon] has been
+    observed. Each congestion onset counts toward lead time when its whole
+    warning window was observed. Mirrors client/src/lib/liveModelEvaluation.ts.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._ports: Dict[PortKey, List[Dict[str, Any]]] = {}
+        self._scored: Deque[bool] = deque(maxlen=LIVE_SCORE_WINDOW)
+        self._onsets: Deque[Optional[float]] = deque(maxlen=LIVE_ONSET_WINDOW)
+
+    def reset(self, key: Optional[PortKey] = None) -> None:
+        with self._lock:
+            if key is not None:
+                self._ports.pop(key, None)
+                return
+            self._ports.clear()
+            self._scored.clear()
+            self._onsets.clear()
+
+    def observe(self, key: PortKey, ts: float, probability: Optional[float], congested: bool) -> None:
+        with self._lock:
+            history = self._ports.get(key, [])
+            if history and not 0 < ts - history[-1]["ts"] <= MAX_SAMPLE_GAP_SECONDS:
+                history = []
+            if congested and history and not history[-1]["congested"]:
+                first_warning: Optional[float] = None
+                index = len(history) - 1
+                while index >= 0:
+                    observation = history[index]
+                    if observation["congested"] or observation["ts"] < ts - HORIZON_SECONDS:
+                        break
+                    if observation["probability"] is not None and observation["probability"] >= WARNING_PROBABILITY:
+                        first_warning = observation["ts"]
+                    index -= 1
+                # Skip onsets whose warning window was not fully observed.
+                if index >= 0 or history[0]["ts"] <= ts - HORIZON_SECONDS + HORIZON_COVERAGE_TOLERANCE_SECONDS:
+                    self._onsets.append(None if first_warning is None else ts - first_warning)
+
+            history.append({"ts": ts, "probability": probability, "congested": congested, "scored": False})
+            for index, observation in enumerate(history):
+                if observation["scored"] or observation["probability"] is None:
+                    continue
+                if ts < observation["ts"] + HORIZON_SECONDS - HORIZON_COVERAGE_TOLERANCE_SECONDS:
+                    break
+                label = False
+                for ahead in history[index + 1:]:
+                    if ahead["ts"] - observation["ts"] > HORIZON_SECONDS:
+                        break
+                    if ahead["congested"]:
+                        label = True
+                        break
+                observation["scored"] = True
+                self._scored.append((observation["probability"] >= WARNING_PROBABILITY) == label)
+            self._ports[key] = [
+                observation for observation in history
+                if observation["ts"] >= ts - HORIZON_SECONDS - MAX_SAMPLE_GAP_SECONDS
+            ]
+
+    def summary(self) -> Dict[str, Any]:
+        with self._lock:
+            scored = list(self._scored)
+            onsets = list(self._onsets)
+        leads = sorted(lead for lead in onsets if lead is not None)
+        middle = len(leads) // 2
+        median = None
+        if leads:
+            median = leads[middle] if len(leads) % 2 else (leads[middle - 1] + leads[middle]) / 2
+        return {
+            "window_predictions": LIVE_SCORE_WINDOW,
+            "scored": len(scored),
+            "accuracy": sum(scored) / len(scored) if len(scored) >= MIN_LIVE_SCORED else None,
+            "events_evaluated": len(onsets),
+            "events_warned": len(leads),
+            "median_lead_seconds": median,
+        }
+
+
 class CongestionPredictor:
     """Controller-side inference over live, gap-free port sample windows."""
 
@@ -393,6 +480,7 @@ class CongestionPredictor:
         self._metrics: Optional[Dict[str, Any]] = None
         self._loaded_mtime: Optional[float] = None
         self.inference_status = "model_missing"
+        self.live_evaluation = LiveEvaluation()
         self._reload_if_changed()
 
     def _reload_if_changed(self) -> None:
@@ -407,6 +495,8 @@ class CongestionPredictor:
             return
         self._loaded_mtime = mtime
         self._model, self._metrics = None, None
+        # Scores of a replaced model do not describe the new one.
+        self.live_evaluation.reset()
         try:
             import joblib
         except ImportError:
@@ -427,6 +517,7 @@ class CongestionPredictor:
         self.inference_status = "ready"
 
     def observe(self, samples: Iterable[Any]) -> None:
+        measured: List[Tuple[PortKey, Dict[str, Any], Optional[List[float]]]] = []
         for sample in samples:
             values = sample.as_dict()
             values["ts"] = datetime.fromisoformat(values["timestamp"]).timestamp()
@@ -436,8 +527,23 @@ class CongestionPredictor:
             if previous_ts is None or values["ts"] - previous_ts > MAX_SAMPLE_GAP_SECONDS:
                 # Rates of the first sample after a gap were not measured.
                 self._windows[key] = deque(maxlen=FEATURE_WINDOW)
+                self.live_evaluation.reset(key)
                 continue
-            self._windows.setdefault(key, deque(maxlen=FEATURE_WINDOW)).append(values)
+            window = self._windows.setdefault(key, deque(maxlen=FEATURE_WINDOW))
+            window.append(values)
+            measured.append((key, values, port_features(list(window))))
+        self._score_live(measured)
+
+    def _score_live(self, measured: List[Tuple[PortKey, Dict[str, Any], Optional[List[float]]]]) -> None:
+        """Predict every measured port in one batch and score earlier predictions."""
+        self._reload_if_changed()
+        if self._model is None or not measured:
+            return
+        rows = [features for _key, _values, features in measured if features is not None]
+        predicted = iter(self._model.predict_proba(rows)[:, self._positive_column]) if rows else iter(())
+        for key, values, features in measured:
+            probability = float(next(predicted)) if features is not None else None
+            self.live_evaluation.observe(key, values["ts"], probability, is_congested(values))
 
     def probability(self, dpid: int, port_no: int) -> Optional[float]:
         """P(port congested within the horizon), or None when no valid prediction exists."""
@@ -462,7 +568,12 @@ class CongestionPredictor:
                 "inference": self.inference_status,
                 "policy": policy(),
             }
-        return {**self._metrics, "reason": None, "inference": self.inference_status}
+        return {
+            **self._metrics,
+            "reason": None,
+            "inference": self.inference_status,
+            "live_evaluation": self.live_evaluation.summary(),
+        }
 
 
 def _train_command(args: argparse.Namespace) -> int:

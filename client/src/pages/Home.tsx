@@ -68,6 +68,7 @@ export default function Home() {
     modelStatus,
     simulatedModel,
     linkRisks,
+    liveEvaluation,
     lastTelemetryUpdate,
   } = useLiveNetworkDataWithCustom();
 
@@ -608,7 +609,7 @@ export default function Home() {
 
           {/* Prediction Tab */}
           <TabsContent value="prediction" className="mt-0 min-w-0 flex-1">
-            <PredictionPanel predictions={predictions} links={links} rerouteEvents={rerouteEvents} dataMode={activeMode === 'default' ? 'real-telemetry' : 'illustrative'} modelStatus={modelStatus} simulatedModel={simulatedModel} linkRisks={linkRisks} />
+            <PredictionPanel predictions={predictions} links={links} rerouteEvents={rerouteEvents} dataMode={activeMode === 'default' ? 'real-telemetry' : 'illustrative'} modelStatus={modelStatus} simulatedModel={simulatedModel} linkRisks={linkRisks} liveEvaluation={liveEvaluation} />
           </TabsContent>
 
           {/* Reroute Log Tab */}

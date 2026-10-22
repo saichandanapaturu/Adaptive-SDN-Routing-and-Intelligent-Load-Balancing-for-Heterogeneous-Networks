@@ -12,6 +12,9 @@ import { networkEdgeKey } from './networkRouting';
 import type { TelemetryLeadTime } from './telemetryApi';
 
 export const LINK_CAPACITY_BPS = 10_000_000;
+export const CONGESTION_UTILIZATION = 0.8;
+export const HORIZON_SECONDS = 10;
+export const HORIZON_COVERAGE_TOLERANCE_SECONDS = 1;
 export const WARNING_PROBABILITY = 0.5;
 export const FEATURE_WINDOW = 5;
 export const MAX_SAMPLE_GAP_SECONDS = 3;
