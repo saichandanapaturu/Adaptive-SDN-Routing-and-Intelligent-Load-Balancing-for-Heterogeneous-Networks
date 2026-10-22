@@ -81,7 +81,6 @@ export default function Home() {
   } = useTopologyContext();
 
   const stats = getNetworkStats();
-  const congestionReroutes = rerouteEvents.filter(event => event.reason === 'Congestion Detected').length;
   const loadBalancingReroutes = rerouteEvents.filter(event => event.reason === 'Load Balancing').length;
   const latestReroute = rerouteEvents[0];
   const blockedPacketFlowCount = activeMode === 'default'
@@ -386,14 +385,7 @@ export default function Home() {
         </div>
 
         {/* Control-plane signals: derived only from current link state and recorded route events. */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="flex items-center justify-between rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3">
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-amber-300">Congestion</p>
-              <p className="mt-1 text-xs text-slate-400">{stats.congestedLinks > 0 ? `${stats.congestedLinks} links above threshold` : 'No links above threshold'}{congestionReroutes > 0 ? ` · ${congestionReroutes} rerouted` : ''}</p>
-            </div>
-            <span className="font-mono text-lg font-semibold text-amber-300">{stats.congestedLinks}</span>
-          </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="flex items-center justify-between rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-3">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-300">Load Balancing</p>
