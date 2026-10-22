@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import type { NetworkLink, NetworkNode, RerouteEvent } from '@/hooks/useLiveNetworkData';
 import { useTrafficSurgeSimulator, type TrafficState } from '@/hooks/useTrafficSurgeSimulator';
 import { useTopologyContext } from '@/contexts/TopologyContext';
+import { RoutingComparison } from '@/components/RoutingComparison';
 import { addPeakHour, isValidPeakHourPeriod, peakHourDurationMinutes, removePeakHour, updatePeakHour } from '@/lib/peakHours';
 
 interface TrafficSurgeSimulatorProps {
@@ -12,7 +13,6 @@ interface TrafficSurgeSimulatorProps {
   onReroute?: (event: RerouteEvent) => void;
 }
 
-const edgeKey = (source: string, target: string) => [source, target].sort().join('::');
 const formatSimulatedTime = (minute: number) => {
   const normalized = ((minute % 1440) + 1440) % 1440;
   return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
@@ -39,8 +39,6 @@ export function TrafficSurgeSimulator({ nodes, links, onReroute }: TrafficSurgeS
   const { peakHours, setPeakHours } = useTopologyContext();
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const maxHistory = Math.max(100, ...simulator.history.map(point => point.intensity));
-  const affectedEdge = simulator.affectedLink ? edgeKey(simulator.affectedLink.source, simulator.affectedLink.target) : '';
-  const recommendedEdges = new Set(simulator.routing.recommendedPath.slice(0, -1).map((node, index) => edgeKey(node, simulator.routing.recommendedPath[index + 1])));
   const editPeakHour = (id: string, changes: Parameters<typeof updatePeakHour>[2]) => {
     const current = peakHours.find(period => period.id === id);
     if (!current || !isValidPeakHourPeriod({ ...current, ...changes })) {
@@ -220,8 +218,8 @@ export function TrafficSurgeSimulator({ nodes, links, onReroute }: TrafficSurgeS
       </div>
 
       <Card className="glass rounded-2xl border-white/10 bg-slate-900/30 backdrop-blur-xl">
-        <CardHeader className="pb-3"><CardTitle className="font-mono text-sm uppercase tracking-wide">Scenario Topology Overlay</CardTitle><CardDescription>Simulation-only overlay using the active Nexus topology; the existing Monitor canvas remains unchanged.</CardDescription></CardHeader>
-        <CardContent><svg viewBox="0 0 900 360" className="h-auto min-h-[260px] w-full rounded-xl border border-white/10 bg-[#07101c] p-2"><g opacity="0.8">{links.map((link, index) => { const source = nodes.find(node => node.id === link.source); const target = nodes.find(node => node.id === link.target); if (!source || !target) return null; const edge = edgeKey(link.source, link.target); const active = edge === affectedEdge; const recommended = recommendedEdges.has(edge); return <line key={`${edge}-${index}`} x1={source.x} y1={source.y} x2={target.x} y2={target.y} stroke={active ? '#fb923c' : recommended ? '#34d399' : '#334155'} strokeWidth={active ? 4 : recommended ? 3 : 1.5} strokeDasharray={active ? '7 5' : undefined} />; })}</g>{nodes.map(node => <g key={node.id}><circle cx={node.x} cy={node.y} r="14" fill="#0f172a" stroke={node.type === 'host' ? '#67e8f9' : '#34d399'} strokeWidth="2" /><text x={node.x} y={node.y + 28} textAnchor="middle" fill="#cbd5e1" fontSize="10" fontFamily="monospace">{node.label}</text></g>)}</svg><div className="mt-3 flex flex-wrap gap-4 font-mono text-[10px] uppercase tracking-wider text-slate-500"><span className="flex items-center gap-2"><i className="h-2 w-6 rounded bg-orange-400" /> affected link</span><span className="flex items-center gap-2"><i className="h-2 w-6 rounded bg-emerald-400" /> recommended path</span></div></CardContent>
+        <CardHeader className="pb-3"><CardTitle className="font-mono text-sm uppercase tracking-wide">Traditional vs SDN Routing</CardTitle><CardDescription>The traffic simulator's demand and surge on the active topology, routed two ways. Packets move while the traffic simulation runs.</CardDescription></CardHeader>
+        <CardContent><RoutingComparison nodes={nodes} links={links} running={simulator.running} paused={simulator.paused} intensity={simulator.intensity} surgeLink={simulator.affectedLink} runId={simulator.runId} /></CardContent>
       </Card>
     </div>
   );
