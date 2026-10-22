@@ -685,13 +685,19 @@ export function useLiveNetworkDataWithCustom() {
         setRerouteEvents(previous => [...reroutes, ...previous].slice(0, 12));
       }
 
-      if (selectedSources.length > 0 && selectedDestinations.length > 0) {
+      // With no route selected, traffic runs between random host pairs so that
+      // congestion still has flows to reroute.
+      const routeSelected = selectedSources.length > 0 && selectedDestinations.length > 0;
+      const hostIds = nextNodes.filter(node => node.type === 'host').map(node => node.id);
+      const flowSources = routeSelected ? selectedSources : hostIds;
+      const flowDestinations = routeSelected ? selectedDestinations : hostIds;
+      if (flowSources.length > 0 && flowDestinations.length > 0) {
         if (updated.length < 16 && tickRef.current % 1 === 0) {
-          const src = selectedSources[Math.floor(Math.random() * selectedSources.length)];
-          const dst = selectedDestinations[Math.floor(Math.random() * selectedDestinations.length)];
+          const src = flowSources[Math.floor(Math.random() * flowSources.length)];
+          const dst = flowDestinations[Math.floor(Math.random() * flowDestinations.length)];
           if (src && dst && src !== dst) {
             const staggeredFlow = createPacketFlow(src, dst, nextLinks);
-            if (staggeredFlow) updated.push(staggeredFlow);
+            if (staggeredFlow && (routeSelected || staggeredFlow.status !== 'blocked')) updated.push(staggeredFlow);
           }
         }
       }
