@@ -36,12 +36,22 @@ class TelemetryApiState:
         self,
         collector: OpenFlowStatisticsCollector,
         switch_provider: Callable[[], List[Dict[str, Any]]],
+        topology_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+        events_provider: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+        forwarding_provider: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+        model_provider: Optional[Callable[[], Dict[str, Any]]] = None,
         *,
         stale_after_seconds: float = DEFAULT_STALE_SECONDS,
         now: Optional[Callable[[], datetime]] = None,
     ) -> None:
         self.collector = collector
         self.switch_provider = switch_provider
+        self.topology_provider = topology_provider or (lambda: {"nodes": [], "links": []})
+        self.events_provider = events_provider or (lambda: [])
+        self.forwarding_provider = forwarding_provider or (lambda: [])
+        self.model_provider = model_provider or (
+            lambda: {"model_type": "random_forest", "status": "unavailable", "reason": "predictor_not_configured"}
+        )
         self.stale_after_seconds = max(0.1, stale_after_seconds)
         self._now = now or (lambda: datetime.now(timezone.utc))
 
@@ -111,6 +121,11 @@ class _TelemetryRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        origin = self.headers.get("Origin")
+        parsed_origin = urlparse(origin) if origin else None
+        if parsed_origin and parsed_origin.scheme in {"http", "https"} and parsed_origin.hostname in {"localhost", "127.0.0.1", "::1"}:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.end_headers()
         self.wfile.write(body)
 
@@ -123,6 +138,18 @@ class _TelemetryRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/telemetry/switches":
             self._send_json({"switches": state.switches()})
+            return
+        if path == "/api/telemetry/topology":
+            self._send_json(state.topology_provider())
+            return
+        if path == "/api/telemetry/events":
+            self._send_json({"events": state.events_provider()})
+            return
+        if path == "/api/telemetry/forwarding":
+            self._send_json({"flows": state.forwarding_provider()})
+            return
+        if path == "/api/telemetry/model":
+            self._send_json(state.model_provider())
             return
         if path == "/api/telemetry/ports":
             health = state.health()

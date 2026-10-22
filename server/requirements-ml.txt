@@ -1,0 +1,3 @@
+# Random Forest congestion model (training and controller inference).
+# The controller runs without these; predictions are then reported unavailable.
+scikit-learn>=1.3

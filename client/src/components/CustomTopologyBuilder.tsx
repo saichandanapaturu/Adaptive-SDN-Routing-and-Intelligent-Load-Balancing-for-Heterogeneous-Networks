@@ -21,6 +21,7 @@ export const CustomTopologyBuilder: React.FC = () => {
     updateNode,
     addLink,
     deleteLink,
+    setLinkStatus,
     clearTopology,
     exportTopology,
     importTopology,
@@ -46,7 +47,7 @@ export const CustomTopologyBuilder: React.FC = () => {
   };
 
   const [nodeLabel, setNodeLabel] = useState('');
-  const [nodeType, setNodeType] = useState<'switch' | 'host' | 'router'>('switch');
+  const [nodeType, setNodeType] = useState<'switch' | 'host'>('switch');
   const [linkSource, setLinkSource] = useState('');
   const [linkTarget, setLinkTarget] = useState('');
   const [linkBandwidth, setLinkBandwidth] = useState('1');
@@ -134,7 +135,7 @@ export const CustomTopologyBuilder: React.FC = () => {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Input
-              placeholder="Node label (e.g., Router-1)"
+              placeholder="Node label (e.g., Switch-1)"
               value={nodeLabel}
               onChange={(e) => setNodeLabel(e.target.value)}
               className="bg-slate-800/50 backdrop-blur-md border-white/10"
@@ -147,7 +148,6 @@ export const CustomTopologyBuilder: React.FC = () => {
               <SelectContent className="glass bg-slate-900/80 backdrop-blur-xl border-white/10">
                 <SelectItem value="switch">Switch</SelectItem>
                 <SelectItem value="host">Host</SelectItem>
-                <SelectItem value="router">Router</SelectItem>
               </SelectContent>
             </Select>
             <Button onClick={handleAddNode} className="bg-emerald-600 hover:bg-emerald-700">
@@ -260,20 +260,43 @@ export const CustomTopologyBuilder: React.FC = () => {
                   >
                     <div className="flex items-center gap-3">
                       <span className="font-semibold text-slate-200">
-                        {sourceNode?.label} → {targetNode?.label}
+                        {sourceNode?.label ?? link.source} ↔ {targetNode?.label ?? link.target}
                       </span>
                       <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-cyan-300">
                         {link.bandwidth} Mbps
                       </span>
+                      {link.status === 'failed' && (
+                        <span className="rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-red-300">
+                          Failed
+                        </span>
+                      )}
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => deleteLink(link.source, link.target)}
-                      className="text-red-500 hover:text-red-400"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-label={`${link.status === 'failed' ? 'Restore' : 'Fail'} link ${sourceNode?.label ?? link.source} to ${targetNode?.label ?? link.target}`}
+                        onClick={() => setLinkStatus(
+                          link.source,
+                          link.target,
+                          link.status === 'failed' ? 'healthy' : 'failed',
+                        )}
+                        className={link.status === 'failed'
+                          ? 'border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10'
+                          : 'border-red-500/30 text-red-300 hover:bg-red-500/10'}
+                      >
+                        {link.status === 'failed' ? 'Restore' : 'Fail'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Delete link ${sourceNode?.label ?? link.source} to ${targetNode?.label ?? link.target}`}
+                        onClick={() => deleteLink(link.source, link.target)}
+                        className="text-red-500 hover:text-red-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 );
               })

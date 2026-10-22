@@ -11,6 +11,7 @@ interface RerouteLogProps {
 
 const REASON_STYLES: Record<string, { text: string; border: string; bg: string; accent: string }> = {
   'Link Failure': { text: 'text-red-400', border: 'border-red-500/40', bg: 'bg-red-500/10', accent: 'bg-red-500' },
+  'No Alternate Path': { text: 'text-red-400', border: 'border-red-500/40', bg: 'bg-red-500/10', accent: 'bg-red-500' },
   'Congestion Detected': { text: 'text-amber-400', border: 'border-amber-500/40', bg: 'bg-amber-500/10', accent: 'bg-amber-500' },
   'Maintenance Mode': { text: 'text-cyan-400', border: 'border-cyan-500/40', bg: 'bg-cyan-500/10', accent: 'bg-cyan-500' },
   'Load Balancing': { text: 'text-emerald-400', border: 'border-emerald-500/40', bg: 'bg-emerald-500/10', accent: 'bg-emerald-500' },
@@ -75,7 +76,9 @@ export const RerouteLog: React.FC<RerouteLogProps> = ({ events }) => {
                           </div>
                           <div>
                             <span className="text-slate-500">New Path:</span>{' '}
-                            <span className="font-mono text-emerald-400">{event.newPath.join(' → ')}</span>
+                            {event.newPath.length > 0
+                              ? <span className="font-mono text-emerald-400">{event.newPath.join(' → ')}</span>
+                              : <span className="font-mono text-slate-500">none available</span>}
                           </div>
                         </div>
                       </div>

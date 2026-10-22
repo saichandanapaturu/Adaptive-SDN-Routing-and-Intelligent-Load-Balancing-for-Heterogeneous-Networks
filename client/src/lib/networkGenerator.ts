@@ -6,7 +6,6 @@ export type CustomTopologyType = 'ring' | 'star' | 'mesh' | 'tree' | 'bus';
 
 export interface GeneratorCounts {
   switches: number;
-  routers: number;
   hubs: number;
   hosts: number;
 }
@@ -42,13 +41,11 @@ function connectRing(links: NetworkLink[], nodes: NetworkNode[], bandwidth: numb
 function createNodes(counts: GeneratorCounts): NetworkNode[] {
   const safeCounts = {
     switches: clampCount(counts.switches),
-    routers: clampCount(counts.routers),
     hubs: clampCount(counts.hubs),
     hosts: clampCount(counts.hosts),
   };
   const nodes: NetworkNode[] = [];
   const layers: Array<{ type: NetworkNode['type']; label: string; count: number; y: number }> = [
-    { type: 'router', label: 'Router', count: safeCounts.routers, y: 72 },
     { type: 'switch', label: 'Switch', count: safeCounts.switches, y: 178 },
     { type: 'hub', label: 'Hub', count: safeCounts.hubs, y: 284 },
     { type: 'host', label: 'Host', count: safeCounts.hosts, y: 390 },
@@ -79,30 +76,30 @@ export function buildGeneratedNetwork(
 ): { nodes: NetworkNode[]; links: NetworkLink[] } {
   const nodes = createNodes(counts);
   const links: NetworkLink[] = [];
-  const routers = nodes.filter(node => node.type === 'router');
   const switches = nodes.filter(node => node.type === 'switch');
   const hubs = nodes.filter(node => node.type === 'hub');
   const hosts = nodes.filter(node => node.type === 'host');
-  const backbone = switches.length > 0 ? switches : routers.length > 0 ? routers : hubs.length > 0 ? hubs : hosts;
+  const backbone = switches.length > 0 ? switches : hubs.length > 0 ? hubs : hosts;
 
   if (strategy === 'recommended') {
-    connectChain(links, routers, 16);
-    connectChain(links, switches, 12);
-    routers.forEach((router, index) => {
-      if (switches.length > 0) addLink(links, router.id, switches[index % switches.length].id, 18);
-    });
+    // Redundant design, so congested traffic always has another path: a ring
+    // of switches, hubs with two switch uplinks, and hosts spread across hubs
+    // and switches so that their traffic crosses the core.
+    if (switches.length >= 3) connectRing(links, switches, 12);
+    else connectChain(links, switches, 12);
     hubs.forEach((hub, index) => {
       if (backbone.length > 0) addLink(links, hub.id, backbone[index % backbone.length].id, 8);
+      if (switches.length > 1) addLink(links, hub.id, switches[(index + 1) % switches.length].id, 8);
     });
+    const access = [...hubs, ...switches];
     hosts.forEach((host, index) => {
-      const attachment = hubs[index % hubs.length] ?? switches[index % switches.length] ?? routers[index % routers.length] ?? backbone[index % backbone.length];
+      const attachment = access[index % access.length] ?? backbone[index % backbone.length];
       if (attachment) addLink(links, host.id, attachment.id, 4);
     });
   } else {
     switch (customTopologyType) {
       case 'ring':
         connectRing(links, backbone, 14);
-        connectRing(links, routers, 18);
         connectRing(links, hubs, 9);
         break;
       case 'star': {
@@ -127,13 +124,9 @@ export function buildGeneratedNetwork(
         });
         break;
       case 'tree': {
-        const root = routers[0] ?? switches[0] ?? nodes[0];
+        const root = switches[0] ?? nodes[0];
         if (root) {
-          routers.slice(1).forEach(router => addLink(links, root.id, router.id, 16));
-          switches.forEach((sw, index) => {
-            const parent = routers[index % routers.length] ?? root;
-            addLink(links, parent.id, sw.id, 12);
-          });
+          switches.forEach(sw => addLink(links, root.id, sw.id, 12));
           hubs.forEach((hub, index) => {
             const parent = switches[index % switches.length] ?? root;
             addLink(links, parent.id, hub.id, 8);
@@ -153,7 +146,7 @@ export function buildGeneratedNetwork(
 
     if (strategy === 'custom' && customTopologyType !== 'bus') {
       hosts.forEach((host, index) => {
-        const attachment = hubs[index % hubs.length] ?? switches[index % switches.length] ?? routers[index % routers.length] ?? backbone[index % backbone.length];
+        const attachment = hubs[index % hubs.length] ?? switches[index % switches.length] ?? backbone[index % backbone.length];
         if (attachment) addLink(links, host.id, attachment.id, 5);
       });
     }

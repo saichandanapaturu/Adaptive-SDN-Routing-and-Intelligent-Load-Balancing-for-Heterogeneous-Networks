@@ -15,14 +15,12 @@ interface NetworkGeneratorProps {
 
 const initialCounts: GeneratorCounts = {
   switches: 4,
-  routers: 2,
   hubs: 1,
   hosts: 8,
 };
 
 const fields: Array<{ key: keyof GeneratorCounts; label: string; hint: string }> = [
-  { key: 'switches', label: 'Switches', hint: 'Layer 2 nodes' },
-  { key: 'routers', label: 'Routers', hint: 'Layer 3 nodes' },
+  { key: 'switches', label: 'Switches', hint: 'SDN forwarding nodes' },
   { key: 'hubs', label: 'Hubs', hint: 'Shared segments' },
   { key: 'hosts', label: 'Hosts', hint: 'Endpoints' },
 ];
@@ -71,7 +69,7 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {fields.map(({ key, label, hint }) => (
               <label key={key} className="space-y-2">
                 <span className="block text-sm font-semibold text-slate-200">{label}</span>

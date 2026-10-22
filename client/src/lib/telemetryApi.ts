@@ -1,3 +1,5 @@
+import type { LiveEvaluationSummary } from './liveModelEvaluation';
+
 export type TelemetryDataStatus = 'unavailable' | 'fresh' | 'stale';
 
 export interface TelemetryHealth {
@@ -43,11 +45,86 @@ export interface TelemetrySummary {
   data_status: TelemetryDataStatus;
 }
 
+export interface TelemetryTopologyNode {
+  id: string;
+  label: string;
+  type: 'switch' | 'host';
+  status: string;
+  x: number;
+  y: number;
+  trafficLevel: number;
+}
+
+export interface TelemetryTopologyLink {
+  source: string;
+  target: string;
+  source_port?: number;
+  target_port?: number;
+  bandwidth: number;
+  trafficLevel: number;
+  status: 'healthy' | 'warning' | 'critical' | 'failed';
+  reason: string;
+  origin: 'detected';
+}
+
+export interface TelemetryControllerEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  [key: string]: unknown;
+}
+
+export interface TelemetryForwardedFlow {
+  source_mac: string;
+  destination_mac: string;
+  source_dpid: number;
+  source_port: number;
+  destination_dpid: number;
+  destination_port: number;
+  path: number[];
+  status: 'active' | 'blocked' | 'pending';
+  blocked_reason: string | null;
+}
+
+export interface TelemetryLeadTime {
+  status: 'available' | 'unavailable';
+  reason: string | null;
+  statistic: 'median';
+  unit: 'seconds';
+  median_seconds: number | null;
+  mean_seconds: number | null;
+  events_evaluated: number;
+  events_warned: number;
+}
+
+/** Random Forest status and held-out evaluation from /api/telemetry/model. */
+export interface TelemetryModelStatus {
+  model_type: 'random_forest';
+  status: 'trained' | 'unavailable';
+  reason: string | null;
+  inference?: string;
+  trained_at?: string;
+  split?: { test_rows: number; train_rows: number; test_start: string; test_end: string };
+  evaluation?: {
+    accuracy: number;
+    balanced_accuracy: number;
+    precision: number;
+    recall: number;
+    f1: number;
+  };
+  lead_time?: TelemetryLeadTime;
+  /** Rolling score of the controller's live predictions; null when malformed. */
+  live_evaluation?: LiveEvaluationSummary | null;
+}
+
 export interface TelemetrySnapshot {
   health: TelemetryHealth;
   switches: TelemetrySwitch[];
   ports: TelemetryPort[];
   summary: TelemetrySummary | null;
+  topology: { nodes: TelemetryTopologyNode[]; links: TelemetryTopologyLink[] };
+  events: TelemetryControllerEvent[];
+  flows: TelemetryForwardedFlow[];
 }
 
 export class TelemetryApiError extends Error {
@@ -110,6 +187,80 @@ function isSummary(value: unknown): value is TelemetrySummary {
     && (value.data_status === 'unavailable' || value.data_status === 'fresh' || value.data_status === 'stale');
 }
 
+function isTopologyNode(value: unknown): value is TelemetryTopologyNode {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.label === 'string'
+    && (value.type === 'switch' || value.type === 'host')
+    && typeof value.status === 'string'
+    && isFiniteNumber(value.x)
+    && isFiniteNumber(value.y)
+    && isFiniteNumber(value.trafficLevel);
+}
+
+function isTopologyLink(value: unknown): value is TelemetryTopologyLink {
+  return isRecord(value)
+    && typeof value.source === 'string'
+    && typeof value.target === 'string'
+    && isFiniteNumber(value.bandwidth)
+    && isFiniteNumber(value.trafficLevel)
+    && ['healthy', 'warning', 'critical', 'failed'].includes(String(value.status))
+    && typeof value.reason === 'string'
+    && value.origin === 'detected';
+}
+
+function isControllerEvent(value: unknown): value is TelemetryControllerEvent {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.type === 'string'
+    && typeof value.timestamp === 'string';
+}
+
+function isForwardedFlow(value: unknown): value is TelemetryForwardedFlow {
+  return isRecord(value)
+    && typeof value.source_mac === 'string'
+    && typeof value.destination_mac === 'string'
+    && isFiniteNumber(value.source_dpid)
+    && isFiniteNumber(value.source_port)
+    && isFiniteNumber(value.destination_dpid)
+    && isFiniteNumber(value.destination_port)
+    && Array.isArray(value.path)
+    && value.path.every(isFiniteNumber)
+    && ['active', 'blocked', 'pending'].includes(String(value.status))
+    && (value.blocked_reason === null || typeof value.blocked_reason === 'string');
+}
+
+function isProbability(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0 && value <= 1;
+}
+
+function isLeadTime(value: unknown): value is TelemetryLeadTime {
+  if (!isRecord(value) || !isFiniteNumber(value.events_evaluated) || !isFiniteNumber(value.events_warned)) return false;
+  if (value.status === 'available') {
+    return isFiniteNumber(value.median_seconds) && value.median_seconds >= 0 && isFiniteNumber(value.mean_seconds);
+  }
+  return value.status === 'unavailable';
+}
+
+function isLiveEvaluation(value: unknown): value is LiveEvaluationSummary {
+  if (!isRecord(value)) return false;
+  const { accuracy, median_lead_seconds: lead } = value;
+  return isFiniteNumber(value.scored) && isFiniteNumber(value.events_evaluated) && isFiniteNumber(value.events_warned)
+    && (accuracy === null || isProbability(accuracy))
+    && (lead === null || (isFiniteNumber(lead) && lead >= 0));
+}
+
+function isModelStatus(value: unknown): value is TelemetryModelStatus {
+  if (!isRecord(value) || value.model_type !== 'random_forest') return false;
+  if (value.status === 'unavailable') return true;
+  return value.status === 'trained'
+    && isRecord(value.evaluation)
+    && ['accuracy', 'balanced_accuracy', 'precision', 'recall', 'f1'].every(field => isProbability((value.evaluation as Record<string, unknown>)[field]))
+    && isRecord(value.split)
+    && isFiniteNumber(value.split.test_rows)
+    && isLeadTime(value.lead_time);
+}
+
 async function getJson(path: string, signal: AbortSignal, baseUrl: string): Promise<unknown> {
   let response: Response;
   try {
@@ -155,8 +306,33 @@ export async function fetchTelemetrySnapshot(options?: { timeoutMs?: number; bas
       throw new TelemetryApiError('Telemetry switches response is malformed.', 'malformed');
     }
 
+    const [topologyBody, eventsBody, forwardingBody] = await Promise.all([
+      getJson('/api/telemetry/topology', controller.signal, baseUrl),
+      getJson('/api/telemetry/events', controller.signal, baseUrl),
+      getJson('/api/telemetry/forwarding', controller.signal, baseUrl),
+    ]);
+    if (!isRecord(topologyBody)
+      || !Array.isArray(topologyBody.nodes) || !topologyBody.nodes.every(isTopologyNode)
+      || !Array.isArray(topologyBody.links) || !topologyBody.links.every(isTopologyLink)) {
+      throw new TelemetryApiError('Telemetry topology response is malformed.', 'malformed');
+    }
+    if (!isRecord(eventsBody) || !Array.isArray(eventsBody.events) || !eventsBody.events.every(isControllerEvent)) {
+      throw new TelemetryApiError('Telemetry events response is malformed.', 'malformed');
+    }
+    if (!isRecord(forwardingBody) || !Array.isArray(forwardingBody.flows) || !forwardingBody.flows.every(isForwardedFlow)) {
+      throw new TelemetryApiError('Telemetry forwarding response is malformed.', 'malformed');
+    }
+
     if (!healthBody.statistics_received) {
-      return { health: healthBody, switches: switchesBody.switches, ports: [], summary: null };
+      return {
+        health: healthBody,
+        switches: switchesBody.switches,
+        ports: [],
+        summary: null,
+        topology: topologyBody as TelemetrySnapshot['topology'],
+        events: eventsBody.events,
+        flows: forwardingBody.flows,
+      };
     }
 
     const [portsBody, summaryBody] = await Promise.all([
@@ -168,7 +344,28 @@ export async function fetchTelemetrySnapshot(options?: { timeoutMs?: number; bas
     }
     if (!isSummary(summaryBody)) throw new TelemetryApiError('Telemetry summary response is malformed.', 'malformed');
 
-    return { health: healthBody, switches: switchesBody.switches, ports: portsBody.ports, summary: summaryBody };
+    return {
+      health: healthBody,
+      switches: switchesBody.switches,
+      ports: portsBody.ports,
+      summary: summaryBody,
+      topology: topologyBody as TelemetrySnapshot['topology'],
+      events: eventsBody.events,
+      flows: forwardingBody.flows,
+    };
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
+export async function fetchModelStatus(options?: { timeoutMs?: number; baseUrl?: string }): Promise<TelemetryModelStatus> {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), options?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  try {
+    const body = await getJson('/api/telemetry/model', controller.signal, options?.baseUrl ?? apiBaseUrl());
+    if (!isModelStatus(body)) throw new TelemetryApiError('Telemetry model response is malformed.', 'malformed');
+    // Optional: an older controller omits it, and a malformed one is not shown.
+    return { ...body, live_evaluation: isLiveEvaluation(body.live_evaluation) ? body.live_evaluation : null };
   } finally {
     globalThis.clearTimeout(timeout);
   }

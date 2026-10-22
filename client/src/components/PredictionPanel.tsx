@@ -2,15 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { PredictionData, NetworkLink, RerouteEvent } from '@/hooks/useLiveNetworkData';
 import { Card, CardContent } from '@/components/ui/card';
 import { ShieldAlert, Activity, Cpu, Clock, Zap, CheckCircle2 } from 'lucide-react';
+import { predictionCardMetrics } from '@/lib/modelMetrics';
+import { findAvailablePath, networkEdgeKey } from '@/lib/networkRouting';
+import type { TelemetryModelStatus } from '@/lib/telemetryApi';
+import { LinkCongestionRisk, SimulatedCongestionModel, WARNING_PROBABILITY } from '@/lib/simulatedCongestionModel';
+import type { LiveEvaluationSummary } from '@/lib/liveModelEvaluation';
 
 interface PredictionPanelProps {
   predictions: PredictionData[];
   links: NetworkLink[];
   rerouteEvents: RerouteEvent[];
   dataMode?: 'real-telemetry' | 'illustrative';
+  modelStatus?: TelemetryModelStatus | null;
+  simulatedModel?: SimulatedCongestionModel | null;
+  linkRisks?: LinkCongestionRisk[];
+  liveEvaluation?: LiveEvaluationSummary | null;
 }
 
-export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, links, rerouteEvents, dataMode = 'illustrative' }) => {
+export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, links, rerouteEvents, dataMode = 'illustrative', modelStatus, simulatedModel, linkRisks = [], liveEvaluation }) => {
   const isRealTelemetryMode = dataMode === 'real-telemetry';
   const [utcTime, setUtcTime] = useState<string>('');
 
@@ -39,18 +48,30 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
     timestamp: new Date(),
   };
 
-  // 1. Model metrics from real live network state
-  const modelName = isRealTelemetryMode ? 'Not deployed' : 'Illustrative';
-  const modelSubtext = isRealTelemetryMode ? 'Random Forest pending' : 'Synthetic dashboard mode';
-  const accuracyPct = isRealTelemetryMode ? '—' : 'N/A';
-  const accuracyChange = isRealTelemetryMode ? 'awaiting model' : 'not a trained model';
-  const leadTime = isRealTelemetryMode ? '—' : 'N/A';
+  // 1. Model metrics: rolling live score, else held-out test, of the controller's
+  // model, or of the simulated-traffic model in simulated views
+  const usesSimulatedModel = !isRealTelemetryMode && Boolean(simulatedModel);
+  const metrics = predictionCardMetrics(dataMode, modelStatus, usesSimulatedModel ? simulatedModel : null, liveEvaluation);
+  const { modelName, modelSubtext, leadTime } = metrics;
+  const accuracyPct = metrics.accuracy;
+  const accuracyChange = metrics.accuracyNote;
 
-  // Congested links prediction
-  const congestedLinksList = links
-    .filter(l => l.trafficLevel >= 55)
-    .sort((a, b) => b.trafficLevel - a.trafficLevel)
-    .slice(0, 2);
+  // Congested links prediction: Random Forest warnings (P >= 0.5 of congestion
+  // within the horizon) when the model runs, otherwise current load.
+  const predictedRisks = usesSimulatedModel
+    ? linkRisks.filter(risk => risk.probability >= WARNING_PROBABILITY).sort((a, b) => b.probability - a.probability)
+    : [];
+  const riskByEdge = new Map(linkRisks.map(risk => [networkEdgeKey(risk.source, risk.target), risk.probability]));
+  const congestedLinksList = usesSimulatedModel
+    ? predictedRisks
+      .map(risk => links.find(link => networkEdgeKey(link.source, link.target) === networkEdgeKey(risk.source, risk.target)))
+      .filter((link): link is NetworkLink => Boolean(link))
+      .slice(0, 2)
+    : links
+      .filter(l => l.trafficLevel >= 55)
+      .sort((a, b) => b.trafficLevel - a.trafficLevel)
+      .slice(0, 2);
+  const hotspotCount = usesSimulatedModel ? predictedRisks.length : congestedLinksList.length;
   const congestedLinksNames = congestedLinksList.length > 0
     ? congestedLinksList.map(l => `${l.source}→${l.target}`).join(', ')
     : 'None (Optimal)';
@@ -86,8 +107,16 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
 
   // Pre-emptive reroute top target
   const topCongested = congestedLinksList[0] || busiestLink;
-  const altPathStr = topCongested ? `${topCongested.source} → Router-Core → ${topCongested.target}` : 'Unavailable';
-  const confidenceStr = topCongested ? `${Math.min(96, Math.round(82 + (topCongested.trafficLevel / 100) * 14))}%` : '—';
+  const altPath = topCongested
+    ? findAvailablePath(topCongested.source, topCongested.target, links, new Set([networkEdgeKey(topCongested.source, topCongested.target)]), true)
+    : [];
+  const altPathStr = altPath.length > 1 ? altPath.join(' → ') : 'Unavailable';
+  const topRisk = topCongested ? riskByEdge.get(networkEdgeKey(topCongested.source, topCongested.target)) : undefined;
+  const confidenceStr = !topCongested
+    ? '—'
+    : usesSimulatedModel
+      ? topRisk === undefined ? '—' : `${Math.round(topRisk * 100)}%`
+      : `${Math.min(96, Math.round(82 + (topCongested.trafficLevel / 100) * 14))}%`;
 
   // The chart is intentionally derived from the rolling prediction history and
   // the current live link telemetry so it changes as the network changes.
@@ -159,7 +188,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
             <div className="text-xs text-slate-400 uppercase tracking-wider font-sans mb-1">ACCURACY</div>
             <div className="text-2xl font-semibold text-emerald-400">{accuracyPct}</div>
             <div className="w-full bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
-              <div className="bg-emerald-500 h-full" style={{ width: isRealTelemetryMode ? '0%' : '0%' }} />
+              <div className="bg-emerald-500 h-full" style={{ width: `${metrics.accuracyBarPct}%` }} />
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
@@ -178,7 +207,7 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-            <span className="text-slate-400">median</span>
+            <span className="text-slate-400">{metrics.leadTimeNote}</span>
             <Clock className="w-4 h-4 text-amber-500/70" />
           </div>
         </Card>
@@ -187,9 +216,9 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
         <Card className="glass border-white/10 bg-slate-900/30 p-4 backdrop-blur-xl flex flex-col justify-between">
           <div>
             <div className="text-xs text-slate-400 uppercase tracking-wider font-sans mb-1">PREDICTED HOTSPOTS</div>
-            <div className="text-2xl font-semibold text-amber-400">{congestedLinksList.length} links</div>
+            <div className="text-2xl font-semibold text-amber-400">{hotspotCount} links</div>
             <div className="w-full bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
-              <div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, congestedLinksList.length * 50)}%` }} />
+              <div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, hotspotCount * 50)}%` }} />
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400 truncate">
@@ -330,7 +359,9 @@ export const PredictionPanel: React.FC<PredictionPanelProps> = ({ predictions, l
             </div>
             <p className="text-xs text-slate-300 leading-relaxed mb-4">
               {isRealTelemetryMode
-                ? 'Random Forest prediction and controller rerouting are not deployed. This panel will populate after those backend stages are implemented.'
+                ? metrics.trained
+                  ? 'The controller ranks equal-hop operational routes by Random Forest congestion risk when it installs or repairs a flow. Pre-emptive rerouting of already-active flows on new predictions is not implemented.'
+                  : 'Random Forest prediction and controller rerouting are not deployed. This panel will populate after those backend stages are implemented.'
                 : <>Model predicts link <strong className="text-amber-300">{topCongested?.source} → {topCongested?.target}</strong> will exceed utilization threshold ({topCongested?.trafficLevel.toFixed(0)}% traffic). Pre-emptively shifting flow to alternate path <strong className="text-cyan-300">{altPathStr}</strong> to prevent packet drop.</>}
             </p>
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-800">

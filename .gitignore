@@ -105,6 +105,9 @@ temp/
 *.sqlite
 *.sqlite3
 
+# Controller telemetry history and trained congestion model artifacts
+server/data/
+
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
 

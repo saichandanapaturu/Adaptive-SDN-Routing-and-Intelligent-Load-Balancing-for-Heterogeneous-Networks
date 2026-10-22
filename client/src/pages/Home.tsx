@@ -56,6 +56,7 @@ export default function Home() {
     sourceCount,
     destinationCount,
     updateMultiRoutes,
+    recordSimulatedReroute,
     getNetworkStats,
     hasCustomTopology,
     hasGeneratedTopology,
@@ -63,6 +64,11 @@ export default function Home() {
     telemetryTick,
     telemetryStatus,
     connectedSwitches,
+    controllerFlows,
+    modelStatus,
+    simulatedModel,
+    linkRisks,
+    liveEvaluation,
     lastTelemetryUpdate,
   } = useLiveNetworkDataWithCustom();
 
@@ -78,6 +84,9 @@ export default function Home() {
   const congestionReroutes = rerouteEvents.filter(event => event.reason === 'Congestion Detected').length;
   const loadBalancingReroutes = rerouteEvents.filter(event => event.reason === 'Load Balancing').length;
   const latestReroute = rerouteEvents[0];
+  const blockedPacketFlowCount = activeMode === 'default'
+    ? controllerFlows.filter(flow => flow.status === 'blocked').length
+    : packetFlows.filter(flow => flow.status === 'blocked').length;
   const activePeakHour = activePeakHourAt(peakHours, simulatedMinute);
   const simulatedTime = `${String(Math.floor(simulatedMinute / 60) % 24).padStart(2, '0')}:${String(simulatedMinute % 60).padStart(2, '0')}`;
   const [activeTab, setActiveTab] = useState('monitor');
@@ -89,7 +98,9 @@ export default function Home() {
 
   const requiredDestCount = useMemo(() => Math.max(1, Math.floor(hostNodes.length / 2)), [hostNodes]);
 
-  const telemetryLabel = activeMode !== 'default'
+  const telemetryLabel = activeMode === 'reference'
+    ? 'Simulated · no controller'
+    : activeMode !== 'default'
     ? 'Configured topology'
     : telemetryStatus === 'connecting'
       ? 'Connecting to API'
@@ -363,8 +374,8 @@ export default function Home() {
           <Card className="glass rounded-2xl border-red-500/25 bg-slate-900/30 p-4 backdrop-blur-xl">
             <div className="flex items-start justify-between">
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-slate-400 mb-1.5">Failed Links</p>
-                <p className="font-mono text-3xl font-semibold text-red-400">{stats.failedLinks}</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-slate-400 mb-1.5">At-Risk Links</p>
+                <p className="font-mono text-3xl font-semibold text-red-400">{stats.atRiskLinks}</p>
               </div>
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/40 bg-red-500/10 text-red-400">
                 <XCircle className="h-4 w-4" />
@@ -421,14 +432,16 @@ export default function Home() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <CardTitle className="text-lg font-semibold">
-                        {activeMode === 'generated' ? 'Generated Network Topology' : hasCustomTopology ? 'Live Custom Network Topology' : 'Network Topology'}
+                        {activeMode === 'generated' ? 'Generated Network Topology' : activeMode === 'custom' ? 'Live Custom Network Topology' : 'Network Topology'}
                       </CardTitle>
                       <CardDescription>
                         {activeMode === 'generated'
                           ? 'Configured topology visualization; OpenFlow mapping is not verified for generated nodes.'
-                          : hasCustomTopology
+                          : activeMode === 'custom'
                             ? 'Configured custom topology; OpenFlow mapping is not verified for custom nodes.'
-                            : 'OpenFlow port telemetry when the OS-Ken controller is connected; physical link mapping is pending.'}
+                            : activeMode === 'reference'
+                              ? 'No controller connected: AIFE reference topology (mininet/topology.py) with traffic driven by the Traffic Simulator. Simulated, not real telemetry.'
+                              : 'Controller-discovered links and installed forwarding state. Live controller flows are not animated.'}
                       </CardDescription>
                       {activePeakHour && (
                         <p role="status" className="mt-2 font-mono text-[11px] uppercase tracking-wider text-amber-200">
@@ -440,13 +453,13 @@ export default function Home() {
                       )}
                     </div>
                     <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                      {activeMode === 'generated' ? `GENERATED LIVE · TICK ${telemetryTick}` : hasCustomTopology ? `CUSTOM LIVE · TICK ${telemetryTick}` : 'DEFAULT LIVE'}
+                      {activeMode === 'generated' ? `GENERATED LIVE · TICK ${telemetryTick}` : activeMode === 'custom' ? `CUSTOM LIVE · TICK ${telemetryTick}` : activeMode === 'reference' ? `DEFAULT LIVE · SIMULATED · TICK ${telemetryTick}` : 'DEFAULT LIVE'}
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {/* Multi-Source & Multi-Destination Dropdown Configuration */}
-                  <div className="space-y-4 rounded-xl border border-white/10 bg-slate-950/40 p-4">
+                  {activeMode !== 'default' && <div className="space-y-4 rounded-xl border border-white/10 bg-slate-950/40 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Multi-Path Parallel Packet Flow</p>
@@ -519,7 +532,7 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Topology Canvas */}
                   <ImprovedNetworkTopology
@@ -530,6 +543,22 @@ export default function Home() {
                     selectedDestinations={selectedDestinations}
                     onNodeSelect={handleNodeSelect}
                   />
+
+                  {activeMode === 'default' && controllerFlows.length > 0 && (
+                    <div className="space-y-2" aria-label="Controller forwarding state">
+                      <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">Controller forwarding</p>
+                      <div className="divide-y divide-white/[0.06] rounded-lg border border-white/10 bg-slate-950/30">
+                        {controllerFlows.map(flow => (
+                          <div key={`${flow.source_mac}>${flow.destination_mac}`} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 font-mono text-xs">
+                            <span className="text-slate-300">{flow.source_mac} → {flow.destination_mac}</span>
+                            <span className={flow.status === 'active' ? 'text-emerald-300' : 'text-red-300'}>
+                              {flow.status === 'active' ? flow.path.map(dpid => `s${dpid}`).join(' → ') : `Blocked · ${flow.blocked_reason ?? 'unreachable'}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Legend */}
                   <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-6 border-t border-slate-800">
@@ -582,6 +611,11 @@ export default function Home() {
                   <div className="rounded-xl border border-white/10 bg-slate-950/25 p-4 backdrop-blur-md">
                     <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500 mb-1.5">Packet Flows</p>
                     <p className="font-mono text-2xl font-semibold text-cyan-400">{packetFlows.length}</p>
+                    {blockedPacketFlowCount > 0 && (
+                      <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-red-300">
+                        {blockedPacketFlowCount} blocked · no available route
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -595,7 +629,7 @@ export default function Home() {
 
           {/* Dynamic Traffic Surge Simulator Tab */}
           <TabsContent value="surge" forceMount className="data-[state=inactive]:hidden mt-0 min-w-0 flex-1">
-            <TrafficSurgeSimulator nodes={nodes} links={links} />
+            <TrafficSurgeSimulator nodes={nodes} links={links} onReroute={recordSimulatedReroute} />
           </TabsContent>
 
           {/* Statistics Tab */}
@@ -605,7 +639,7 @@ export default function Home() {
 
           {/* Prediction Tab */}
           <TabsContent value="prediction" className="mt-0 min-w-0 flex-1">
-            <PredictionPanel predictions={predictions} links={links} rerouteEvents={rerouteEvents} dataMode={activeMode === 'default' ? 'real-telemetry' : 'illustrative'} />
+            <PredictionPanel predictions={predictions} links={links} rerouteEvents={rerouteEvents} dataMode={activeMode === 'default' ? 'real-telemetry' : 'illustrative'} modelStatus={modelStatus} simulatedModel={simulatedModel} linkRisks={linkRisks} liveEvaluation={liveEvaluation} />
           </TabsContent>
 
           {/* Reroute Log Tab */}
