@@ -81,6 +81,8 @@ export default function Home() {
   } = useTopologyContext();
 
   const stats = getNetworkStats();
+  const loadBalancingReroutes = rerouteEvents.filter(event => event.reason === 'Load Balancing').length;
+  const latestReroute = rerouteEvents[0];
   const blockedPacketFlowCount = activeMode === 'default'
     ? controllerFlows.filter(flow => flow.status === 'blocked').length
     : packetFlows.filter(flow => flow.status === 'blocked').length;
@@ -380,6 +382,26 @@ export default function Home() {
             </div>
             <div className="mt-3 pt-2.5 border-t border-white/[0.06] text-xs text-slate-500">requires attention</div>
           </Card>
+        </div>
+
+        {/* Control-plane signals: derived only from current link state and recorded route events. */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="flex items-center justify-between rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-emerald-300">Load Balancing</p>
+              <p className="mt-1 text-xs text-slate-400">{loadBalancingReroutes > 0 ? `${loadBalancingReroutes} balancing reroute${loadBalancingReroutes === 1 ? '' : 's'} recorded` : 'Standby · awaiting route pressure'}</p>
+            </div>
+            <span className={`font-mono text-xs font-semibold uppercase ${loadBalancingReroutes > 0 ? 'text-emerald-300' : 'text-slate-500'}`}>{loadBalancingReroutes > 0 ? 'Active' : 'Standby'}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-xl border border-cyan-500/25 bg-cyan-500/[0.06] px-4 py-3">
+            <div className="min-w-0">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-300">Re-routing</p>
+              <p className="mt-1 truncate text-xs text-slate-400" title={latestReroute ? `${latestReroute.source} → ${latestReroute.destination}` : undefined}>
+                {latestReroute ? `${latestReroute.reason} · ${latestReroute.source} → ${latestReroute.destination}` : 'No route changes recorded'}
+              </p>
+            </div>
+            <span className="ml-3 font-mono text-lg font-semibold text-cyan-300">{rerouteEvents.length}</span>
+          </div>
         </div>
 
         {/* Tabs */}

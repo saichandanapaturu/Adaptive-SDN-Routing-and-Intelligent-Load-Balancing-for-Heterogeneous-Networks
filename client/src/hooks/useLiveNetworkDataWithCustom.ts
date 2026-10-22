@@ -368,6 +368,7 @@ export function useLiveNetworkDataWithCustom() {
   const [liveEvaluation, setLiveEvaluation] = useState<LiveEvaluationSummary | null>(null);
   const [lastTelemetryUpdate, setLastTelemetryUpdate] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const routeSelected = selectedSources.length > 0 && selectedDestinations.length > 0;
   const failedEdgesRef = useRef<Set<string>>(new Set());
   const failureTopologyRef = useRef<string>('');
   const nodesRef = useRef(nodes);
@@ -501,6 +502,7 @@ export function useLiveNetworkDataWithCustom() {
 
   useEffect(() => {
     if (activeMode === 'default') return;
+    if (!routeSelected) return;
     const scheduledLinks = simulatedLinkTraffic(
       baseLinksRef.current,
       peakHoursRef.current,
@@ -520,7 +522,7 @@ export function useLiveNetworkDataWithCustom() {
     });
     nodesRef.current = scheduledNodes;
     setNodes(scheduledNodes);
-  }, [activeMode, activeNodes, peakHours, simulatedMinute, trafficOverlay, topologyKey]);
+  }, [activeMode, activeNodes, peakHours, simulatedMinute, trafficOverlay, topologyKey, routeSelected]);
 
   useEffect(() => {
     // Poll whenever the default view is selected, including while it shows the
@@ -630,6 +632,13 @@ export function useLiveNetworkDataWithCustom() {
   useEffect(() => {
     if (activeMode === 'default') return;
     const interval = window.setInterval(() => {
+      if (!routeSelected) {
+        if (packetFlowsRef.current.length > 0) {
+          packetFlowsRef.current = [];
+          setPacketFlows([]);
+        }
+        return;
+      }
       const currentNodes = nodesRef.current;
       const currentLinks = baseLinksRef.current;
       // A pair's route burst is split across the paths its flows use, so
@@ -758,16 +767,10 @@ export function useLiveNetworkDataWithCustom() {
         setRerouteEvents(previous => [...tickEvents, ...previous].slice(0, 12));
       }
 
-      // With no route selected, traffic runs between random host pairs so that
-      // congestion still has flows to reroute.
-      const routeSelected = selectedSources.length > 0 && selectedDestinations.length > 0;
-      const hostIds = nextNodes.filter(node => node.type === 'host').map(node => node.id);
-      const flowSources = routeSelected ? selectedSources : hostIds;
-      const flowDestinations = routeSelected ? selectedDestinations : hostIds;
-      if (flowSources.length > 0 && flowDestinations.length > 0) {
+      if (selectedSources.length > 0 && selectedDestinations.length > 0) {
         if (updated.length < 16 && tickRef.current % 1 === 0) {
-          const src = flowSources[Math.floor(Math.random() * flowSources.length)];
-          const dst = flowDestinations[Math.floor(Math.random() * flowDestinations.length)];
+          const src = selectedSources[Math.floor(Math.random() * selectedSources.length)];
+          const dst = selectedDestinations[Math.floor(Math.random() * selectedDestinations.length)];
           if (src && dst && src !== dst) {
             const staggeredFlow = createPacketFlow(src, dst, nextLinks);
             if (staggeredFlow && (routeSelected || staggeredFlow.status !== 'blocked')) updated.push(staggeredFlow);
@@ -780,7 +783,7 @@ export function useLiveNetworkDataWithCustom() {
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [activeMode, selectedDestinations, selectedSources, topologyKey]);
+  }, [activeMode, selectedDestinations, selectedSources, topologyKey, routeSelected]);
 
   // Reroutes decided by the Traffic Surge Simulator. Its traffic is synthetic,
   // so it is logged only for configured (custom/generated) topologies, never
@@ -797,6 +800,12 @@ export function useLiveNetworkDataWithCustom() {
     setDestinationCount(destinations.length);
 
     if (activeMode === 'default') {
+      packetFlowsRef.current = [];
+      setPacketFlows([]);
+      return;
+    }
+
+    if (sources.length === 0 || destinations.length === 0) {
       packetFlowsRef.current = [];
       setPacketFlows([]);
       return;
@@ -820,25 +829,25 @@ export function useLiveNetworkDataWithCustom() {
 
   const getNetworkStats = () => ({
     totalNodes: nodes.length,
-    activeLinks: activeMode === 'default'
+    activeLinks: !routeSelected ? 0 : activeMode === 'default'
       ? new Set(controllerFlows.filter(flow => flow.status === 'active').flatMap(flow =>
         flow.path.slice(0, -1).map((dpid, index) => edgeKey(`switch-${dpid}`, `switch-${flow.path[index + 1]}`)),
       )).size
       : countPacketActiveLinks(links, packetFlows),
-    congestedLinks: activeMode === 'default' ? 0 : links.filter(link => link.status === 'warning' || link.status === 'critical').length,
-    failedLinks: links.filter(link => link.status === 'failed').length,
-    atRiskLinks: links.filter(isAtRiskLink).length,
-    maxTraffic: Math.max(...links.map(link => link.trafficLevel), 0),
-    avgTraffic: links.length > 0 ? links.reduce((sum, link) => sum + link.trafficLevel, 0) / links.length : 0,
-    activeNodes: activeMode === 'default' ? connectedSwitches.length : nodes.filter(node => node.status === 'healthy').length,
+    congestedLinks: !routeSelected || activeMode === 'default' ? 0 : links.filter(link => link.status === 'warning' || link.status === 'critical').length,
+    failedLinks: !routeSelected ? 0 : links.filter(link => link.status === 'failed').length,
+    atRiskLinks: !routeSelected ? 0 : links.filter(isAtRiskLink).length,
+    maxTraffic: !routeSelected ? 0 : Math.max(...links.map(link => link.trafficLevel), 0),
+    avgTraffic: !routeSelected || links.length === 0 ? 0 : links.reduce((sum, link) => sum + link.trafficLevel, 0) / links.length,
+    activeNodes: !routeSelected ? 0 : activeMode === 'default' ? connectedSwitches.length : nodes.filter(node => node.status === 'healthy').length,
   });
 
   return {
     nodes,
     links,
-    portStats,
-    rerouteEvents,
-    predictions,
+    portStats: routeSelected ? portStats : [],
+    rerouteEvents: routeSelected ? rerouteEvents : [],
+    predictions: routeSelected ? predictions : [],
     packetFlows,
     selectedSources,
     selectedDestinations,
@@ -853,13 +862,13 @@ export function useLiveNetworkDataWithCustom() {
     telemetryTick: tick,
     telemetryStatus,
     connectedSwitches,
-    controllerFlows,
+    controllerFlows: routeSelected ? controllerFlows : [],
     modelStatus,
     // The simulated-traffic model applies to simulated views only.
     simulatedModel: activeMode === 'default' ? null : simulatedModel,
-    linkRisks: activeMode === 'default' ? [] : linkRisks,
+    linkRisks: !routeSelected || activeMode === 'default' ? [] : linkRisks,
     // Live mode reads the controller's rolling evaluation from modelStatus.
-    liveEvaluation: activeMode === 'default' ? null : liveEvaluation,
+    liveEvaluation: !routeSelected || activeMode === 'default' ? null : liveEvaluation,
     lastTelemetryUpdate,
   };
 }
