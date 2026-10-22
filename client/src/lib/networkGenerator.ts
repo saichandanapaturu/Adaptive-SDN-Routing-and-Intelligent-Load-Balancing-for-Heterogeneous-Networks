@@ -82,12 +82,18 @@ export function buildGeneratedNetwork(
   const backbone = switches.length > 0 ? switches : hubs.length > 0 ? hubs : hosts;
 
   if (strategy === 'recommended') {
-    connectChain(links, switches, 12);
+    // Redundant design, so congested traffic always has another path: a ring
+    // of switches, hubs with two switch uplinks, and hosts spread across hubs
+    // and switches so that their traffic crosses the core.
+    if (switches.length >= 3) connectRing(links, switches, 12);
+    else connectChain(links, switches, 12);
     hubs.forEach((hub, index) => {
       if (backbone.length > 0) addLink(links, hub.id, backbone[index % backbone.length].id, 8);
+      if (switches.length > 1) addLink(links, hub.id, switches[(index + 1) % switches.length].id, 8);
     });
+    const access = [...hubs, ...switches];
     hosts.forEach((host, index) => {
-      const attachment = hubs[index % hubs.length] ?? switches[index % switches.length] ?? backbone[index % backbone.length];
+      const attachment = access[index % access.length] ?? backbone[index % backbone.length];
       if (attachment) addLink(links, host.id, attachment.id, 4);
     });
   } else {
