@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -18,6 +19,17 @@ except ImportError:
 
 
 LOG = logging.getLogger("aife.forwarding")
+
+
+def _new_event() -> Any:
+    """An event whose wait(timeout) returns when the timeout expires.
+
+    OS-Ken 4 defaults to native threads (hub.HUB_TYPE == "native"), where
+    hub.Event.wait(timeout) cannot interrupt the waiting thread and blocks
+    forever; threading.Event is the native equivalent. Eventlet keeps
+    hub.Event, whose green-thread timeout works.
+    """
+    return threading.Event() if getattr(hub, "HUB_TYPE", "eventlet") == "native" else hub.Event()
 OFP_VERSION_1_3 = 4
 ETH_TYPE_LLDP = 0x88CC
 AIFE_FLOW_COOKIE = 0xA1FE000000000001
@@ -195,7 +207,11 @@ class AIFEForwarding:
         key = (dpid, port_no)
         previous_port_state = self.port_states.get(key)
         self.port_states[key] = is_up
-        self.port_names[key] = getattr(desc, "name", str(port_no)).strip("\x00")
+        name = getattr(desc, "name", str(port_no))
+        if isinstance(name, bytes):
+            # OS-Ken reports port names as NUL-padded bytes.
+            name = name.decode("utf-8", "replace")
+        self.port_names[key] = name.strip("\x00")
         if not is_up:
             for link in self.links.values():
                 if key == (link.source, link.source_port):
@@ -551,16 +567,24 @@ class AIFEForwarding:
         error_counts = {datapath.id: self._flow_errors.get(datapath.id, 0) for datapath in datapaths}
         for datapath in datapaths:
             request = datapath.ofproto_parser.OFPBarrierRequest(datapath)
-            event = hub.Event()
+            # send_msg assigns an xid only when none is set. Assign it now so
+            # the reply's xid matches the key registered below.
+            datapath.set_xid(request)
+            event = _new_event()
             self._barriers[(datapath.id, request.xid)] = event
             pending.append((datapath, request.xid))
             datapath.send_msg(request)
         success = True
         for datapath, xid in pending:
-            event = self._barriers.pop((datapath.id, xid))
-            if not event.wait(timeout=2.0):
-                LOG.error("Timed out waiting for OpenFlow barrier: dpid=%016x xid=%s", datapath.id, xid)
-                success = False
+            # Stay registered while waiting: barrier_reply looks the event up
+            # by (dpid, xid) when the switch answers.
+            event = self._barriers[(datapath.id, xid)]
+            try:
+                if not event.wait(timeout=2.0):
+                    LOG.error("Timed out waiting for OpenFlow barrier: dpid=%016x xid=%s", datapath.id, xid)
+                    success = False
+            finally:
+                self._barriers.pop((datapath.id, xid), None)
             if self._flow_errors.get(datapath.id, 0) != error_counts[datapath.id]:
                 success = False
         return success

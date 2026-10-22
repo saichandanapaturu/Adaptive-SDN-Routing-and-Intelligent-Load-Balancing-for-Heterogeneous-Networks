@@ -7,13 +7,16 @@ Forest congestion model; it never generates or back-fills samples.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from threading import Lock
-from typing import Any, Dict, Iterable, List
+from queue import Queue
+from threading import Lock, Thread
+from typing import Any, Dict, Iterable, List, Optional
 
+LOG = logging.getLogger("aife.telemetry_store")
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "telemetry.sqlite3"
 
 _COLUMNS = (
@@ -35,6 +38,8 @@ class TelemetryStore:
         self.path = Path(path) if path is not None else configured_db_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = Lock()
+        self._pending: "Queue[Optional[List[tuple]]]" = Queue()
+        self._writer: Optional[Thread] = None
         self._connection = sqlite3.connect(str(self.path), check_same_thread=False)
         self._connection.execute(
             """
@@ -64,19 +69,16 @@ class TelemetryStore:
         )
         self._connection.commit()
 
-    def record(self, samples: Iterable[Any]) -> int:
-        """Persist processed ``PortStatistics`` samples; returns rows written.
-
-        The first sample of a port has no previous counter, so its rates are
-        not measured. It is still stored; feature extraction skips it.
-        """
+    @staticmethod
+    def _rows(samples: Iterable[Any]) -> List[tuple]:
         rows = []
         for sample in samples:
             values = sample.as_dict()
             values["ts"] = datetime.fromisoformat(values["timestamp"]).timestamp()
             rows.append(tuple(values[column] for column in _COLUMNS))
-        if not rows:
-            return 0
+        return rows
+
+    def _write(self, rows: List[tuple]) -> None:
         placeholders = ", ".join("?" for _ in _COLUMNS)
         with self._lock:
             self._connection.executemany(
@@ -84,7 +86,44 @@ class TelemetryStore:
                 rows,
             )
             self._connection.commit()
+
+    def record(self, samples: Iterable[Any]) -> int:
+        """Persist processed ``PortStatistics`` samples; returns rows written.
+
+        The first sample of a port has no previous counter, so its rates are
+        not measured. It is still stored; feature extraction skips it.
+        """
+        rows = self._rows(samples)
+        if rows:
+            self._write(rows)
         return len(rows)
+
+    def record_async(self, samples: Iterable[Any]) -> None:
+        """Queue samples for a background writer thread and return at once."""
+        rows = self._rows(samples)
+        if not rows:
+            return
+        if self._writer is None:
+            self._writer = Thread(target=self._write_loop, name="aife-telemetry-writer", daemon=True)
+            self._writer.start()
+        self._pending.put(rows)
+
+    def _write_loop(self) -> None:
+        while True:
+            rows = self._pending.get()
+            if rows is None:
+                return
+            try:
+                self._write(rows)
+            except sqlite3.Error:
+                LOG.exception("Telemetry history write failed; %d samples lost", len(rows))
+            finally:
+                self._pending.task_done()
+
+    def flush(self) -> None:
+        """Wait until every queued sample has been written."""
+        if self._writer is not None:
+            self._pending.join()
 
     def load(self) -> List[Dict[str, Any]]:
         """Return every stored sample ordered by port and time."""
@@ -95,5 +134,10 @@ class TelemetryStore:
             return [dict(zip(_COLUMNS, row)) for row in cursor.fetchall()]
 
     def close(self) -> None:
+        if self._writer is not None:
+            self.flush()
+            self._pending.put(None)
+            self._writer.join(timeout=5)
+            self._writer = None
         with self._lock:
             self._connection.close()

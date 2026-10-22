@@ -185,6 +185,23 @@ class TelemetryStoreTests(TestCase):
         self.assertEqual((rows[0]["dpid"], rows[0]["port_no"], rows[0]["tx_bytes"]), (7, 3, 4))
         self.assertEqual(rows[0]["ts"], START)
 
+    def test_background_writer_persists_every_queued_sample(self) -> None:
+        collector = OpenFlowStatisticsCollector()
+        with TemporaryDirectory() as directory:
+            store = TelemetryStore(Path(directory) / "history.sqlite3")
+            for second in range(20):
+                counters = type("Counters", (), {
+                    "port_no": 1, "rx_packets": second, "tx_packets": second, "rx_bytes": second, "tx_bytes": second,
+                    "rx_errors": 0, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0,
+                })()
+                store.record_async(collector.process_port_stats(
+                    1, [counters], received_at=datetime.fromtimestamp(START + second, timezone.utc),
+                    received_monotonic=float(second),
+                ))
+            store.flush()
+            self.assertEqual(len(store.load()), 20)
+            store.close()
+
 
 if __name__ == "__main__":
     main()

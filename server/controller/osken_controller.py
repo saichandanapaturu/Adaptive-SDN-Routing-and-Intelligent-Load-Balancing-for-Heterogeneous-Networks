@@ -3,6 +3,7 @@
 
 import logging
 import sqlite3
+import threading
 from typing import Dict
 
 from os_ken.base import app_manager
@@ -37,6 +38,23 @@ except ImportError:
 
 
 LOG = logging.getLogger("aife.osken_controller")
+MAX_PENDING_PACKET_INS = 64
+
+
+def _spawn(func, *args, **kwargs):
+    """hub.spawn that logs exceptions.
+
+    In OS-Ken 4's native hub, TaskExit is Exception, so HubThread swallows
+    every exception in a spawned function without logging it.
+    """
+    def run():
+        try:
+            return func(*args, **kwargs)
+        except Exception:  # noqa: BLE001 - surfaced in the log, then the thread ends
+            LOG.exception("Controller task %s failed", getattr(func, "__qualname__", func))
+            return None
+
+    return hub.spawn(run)
 
 
 app_manager.require_app(topology_switches.__name__)
@@ -48,6 +66,7 @@ class AIFEController(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.connected_switches: Dict[int, object] = {}
+        self._packet_in_slots = threading.BoundedSemaphore(MAX_PENDING_PACKET_INS)
         self.predictor = CongestionPredictor()
         LOG.info("Random Forest congestion predictor: %s", self.predictor.inference_status)
         self.forwarding = AIFEForwarding(self.connected_switches, self.predictor)
@@ -69,7 +88,7 @@ class AIFEController(app_manager.OSKenApp):
             )
         )
         self.telemetry_service.start()
-        self._stats_thread = hub.spawn(self._poll_port_statistics)
+        self._stats_thread = _spawn(self._poll_port_statistics)
         LOG.info("AIFE OS-Ken controller initialized for OpenFlow 1.3")
 
     def _switch_snapshot(self):
@@ -105,7 +124,9 @@ class AIFEController(app_manager.OSKenApp):
         self.connected_switches[dpid] = datapath
         LOG.info("Switch connected: dpid=%016x", dpid)
         self._install_table_miss(datapath)
-        hub.spawn(self._refresh_switch_state, datapath)
+        # Rule cleanup and port discovery start once the handshake reaches
+        # MAIN_DISPATCHER (switch_state_change_handler); during CONFIG their
+        # replies would not reach MAIN_DISPATCHER handlers.
 
     @set_ev_cls(ofp_event.EventOFPStateChange, [MAIN_DISPATCHER, DEAD_DISPATCHER])
     def switch_state_change_handler(self, ev):
@@ -116,12 +137,12 @@ class AIFEController(app_manager.OSKenApp):
         if ev.state == MAIN_DISPATCHER:
             if self.connected_switches.get(dpid) is not datapath:
                 self.connected_switches[dpid] = datapath
-                LOG.info("Switch entered main dispatcher: dpid=%016x", dpid)
-                hub.spawn(self._refresh_switch_state, datapath)
+            LOG.info("Switch entered main dispatcher: dpid=%016x", dpid)
+            _spawn(self._refresh_switch_state, datapath)
         elif ev.state == DEAD_DISPATCHER:
             if self.connected_switches.pop(dpid, None) is not None:
                 LOG.info("Switch disconnected: dpid=%016x", dpid)
-                hub.spawn(self.forwarding.switch_disconnected, dpid)
+                _spawn(self.forwarding.switch_disconnected, dpid)
 
     @staticmethod
     def _request_port_descriptions(datapath):
@@ -162,11 +183,9 @@ class AIFEController(app_manager.OSKenApp):
         samples = self.statistics.process_port_stats(datapath.id, ev.msg.body)
         self.predictor.observe(samples)
         if self.telemetry_store is not None:
-            try:
-                self.telemetry_store.record(samples)
-            except sqlite3.Error:
-                LOG.exception("Telemetry history disabled: SQLite write failed")
-                self.telemetry_store = None
+            # Written by the store's background thread so slow disk I/O never
+            # delays this event thread (which also delivers barrier replies).
+            self.telemetry_store.record_async(samples)
         for sample in samples:
             LOG.info(
                 "[STATS] DPID=%s PORT=%s RX_BYTES=%s TX_BYTES=%s "
@@ -188,30 +207,43 @@ class AIFEController(app_manager.OSKenApp):
 
     @set_ev_cls(topology_event.EventLinkAdd)
     def link_add_handler(self, ev):
-        hub.spawn(self.forwarding.link_added, ev.link)
+        _spawn(self.forwarding.link_added, ev.link)
 
     @set_ev_cls(topology_event.EventLinkDelete)
     def link_delete_handler(self, ev):
-        hub.spawn(self.forwarding.link_deleted, ev.link)
+        _spawn(self.forwarding.link_deleted, ev.link)
 
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
     def port_status_handler(self, ev):
         deleted = ev.msg.reason == ev.msg.datapath.ofproto.OFPPR_DELETE
-        hub.spawn(self.forwarding.port_status, ev.msg.datapath, ev.msg.desc, deleted=deleted)
+        _spawn(self.forwarding.port_status, ev.msg.datapath, ev.msg.desc, deleted=deleted)
 
-    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
+    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, [CONFIG_DISPATCHER, MAIN_DISPATCHER])
     def port_description_reply_handler(self, ev):
-        hub.spawn(self.forwarding.port_descriptions, ev.msg.datapath, ev.msg.body)
+        _spawn(self.forwarding.port_descriptions, ev.msg.datapath, ev.msg.body)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
-        hub.spawn(self.forwarding.packet_in, ev)
+        # Handlers run outside the event thread because installing a route
+        # waits for barrier replies delivered by that thread. Cap them: a
+        # packet-in flood (for example before routes exist) would otherwise
+        # start one blocked thread per packet. Dropped packet-ins are only
+        # unforwarded first packets; senders retry or the next one is handled.
+        if not self._packet_in_slots.acquire(blocking=False):
+            return
+        _spawn(self._handle_packet_in, ev)
 
-    @set_ev_cls(ofp_event.EventOFPBarrierReply, MAIN_DISPATCHER)
+    def _handle_packet_in(self, ev):
+        try:
+            self.forwarding.packet_in(ev)
+        finally:
+            self._packet_in_slots.release()
+
+    @set_ev_cls(ofp_event.EventOFPBarrierReply, [CONFIG_DISPATCHER, MAIN_DISPATCHER])
     def barrier_reply_handler(self, ev):
         self.forwarding.barrier_reply(ev)
 
-    @set_ev_cls(ofp_event.EventOFPErrorMsg, MAIN_DISPATCHER)
+    @set_ev_cls(ofp_event.EventOFPErrorMsg, [CONFIG_DISPATCHER, MAIN_DISPATCHER])
     def openflow_error_handler(self, ev):
         self.forwarding.openflow_error(ev)
 

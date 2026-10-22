@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest import TestCase, main
 
 from os_ken.cfg import CONF
+from os_ken.lib import hub
 from server.controller import osken_controller
 from server.controller.forwarding import AIFEForwarding, LearnedFlow
 from server.controller.routing import SwitchLink
@@ -36,6 +37,19 @@ class ForwardingLinkStateTests(TestCase):
             config=0,
             name=f"p{port_no}",
         )
+
+    def test_port_descriptions_with_byte_names_mark_every_port(self) -> None:
+        # OS-Ken reports names as NUL-padded bytes, with OFPP_LOCAL first.
+        local = SimpleNamespace(port_no=0xFFFFFFFE, state=1, config=1, name=b"s1\x00\x00")
+        ports = [SimpleNamespace(port_no=no, state=4, config=0, name=b"s1-eth%d\x00" % no) for no in (1, 12)]
+        self.forwarding.link_added(self.link)
+        self.forwarding.port_descriptions(self.datapaths[1], [local, *ports])
+        self.forwarding.port_descriptions(self.datapaths[2], [SimpleNamespace(port_no=21, state=4, config=0, name=b"s2-eth1")])
+
+        self.assertIs(self.forwarding.port_states[(1, 1)], True)
+        self.assertIs(self.forwarding.port_states[(1, 12)], True)
+        self.assertEqual(self.forwarding.port_names[(1, 12)], "s1-eth12")
+        self.assertEqual(self.forwarding.links[(1, 2)].status, "operational")
 
     def test_link_failure_is_detected_once_and_endpoint_state_invalidated(self) -> None:
         self.forwarding.link_added(self.link)
@@ -267,6 +281,51 @@ class ForwardingRuleTests(TestCase):
         self.assertEqual(flow.status, "blocked")
         self.assertEqual(flow.path, [])
         self.assertIsNone(flow.route_selection)
+
+
+class BarrierTests(TestCase):
+    """Drive the real _barrier with a datapath that numbers xids like OS-Ken."""
+
+    class _Datapath:
+        def __init__(self, dpid, forwarding_ref, reply=True):
+            self.id = dpid
+            self.xid = 100
+            self.forwarding_ref = forwarding_ref
+            self.reply = reply
+            self.ofproto_parser = SimpleNamespace(OFPBarrierRequest=lambda _dp: SimpleNamespace(xid=None))
+
+        def set_xid(self, msg):
+            self.xid += 1
+            msg.xid = self.xid
+            return self.xid
+
+        def send_msg(self, msg):
+            if msg.xid is None:
+                self.set_xid(msg)
+            if self.reply:
+                # The switch answers later with the xid carried by the request.
+                reply = SimpleNamespace(msg=SimpleNamespace(datapath=self, xid=msg.xid))
+
+                def answer():
+                    hub.sleep(0.05)
+                    self.forwarding_ref[0].barrier_reply(reply)
+
+                hub.spawn(answer)
+
+    def test_barrier_reply_is_matched_to_its_request(self) -> None:
+        holder = []
+        datapath = self._Datapath(1, holder)
+        forwarding = AIFEForwarding({1: datapath})
+        holder.append(forwarding)
+        self.assertTrue(forwarding._barrier([datapath]))
+        self.assertEqual(forwarding._barriers, {})
+
+    def test_missing_barrier_reply_times_out_as_failure(self) -> None:
+        holder = []
+        datapath = self._Datapath(1, holder, reply=False)
+        forwarding = AIFEForwarding({1: datapath})
+        holder.append(forwarding)
+        self.assertFalse(forwarding._barrier([datapath]))
 
 
 if __name__ == "__main__":
