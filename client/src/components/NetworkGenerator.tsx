@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTopologyContext } from '@/contexts/TopologyContext';
+import { CustomTopologyBuilder } from '@/components/CustomTopologyBuilder';
 import { buildGeneratedNetwork, GENERATOR_LIMITS, CustomTopologyType, GeneratorCounts, GeneratorStrategy } from '@/lib/networkGenerator';
 
 interface NetworkGeneratorProps {
@@ -134,6 +135,8 @@ export const NetworkGenerator: React.FC<NetworkGeneratorProps> = ({ onGenerated 
           <p>Generated networks become the active source for live monitoring, statistics, predictions, and reroute logs. Your existing Custom Topology remains safely stored and editable independently.</p>
         </CardContent>
       </Card>
+
+      <CustomTopologyBuilder />
     </div>
   );
 };

@@ -3,7 +3,6 @@ import { useLiveNetworkDataWithCustom } from '@/hooks/useLiveNetworkDataWithCust
 import { useTopologyContext } from '@/contexts/TopologyContext';
 import { activePeakHourAt } from '@/lib/peakHours';
 import { ImprovedNetworkTopology } from '@/components/ImprovedNetworkTopology';
-import { CustomTopologyBuilder } from '@/components/CustomTopologyBuilder';
 import { NetworkGenerator } from '@/components/NetworkGenerator';
 import { PortStatistics } from '@/components/PortStatistics';
 import { RerouteLog } from '@/components/RerouteLog';
@@ -13,13 +12,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from '@/components/ui/command';
-import { Activity, AlertTriangle, BarChart3, Boxes, BrainCircuit, CircleDot, GitBranch, Network, PanelLeft, Radar, ScrollText, Search, Waypoints, XCircle, Zap, type LucideIcon } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Boxes, BrainCircuit, CircleDot, Network, PanelLeft, Radar, ScrollText, Search, Waypoints, XCircle, Zap, type LucideIcon } from 'lucide-react';
 
 interface NavItem {
   id: string;
   label: string;
   icon: LucideIcon;
-  isActive: (context: { activeTab: string; isUsingGenerated: boolean }) => boolean;
+  isActive: (context: { activeTab: string; isUsingGenerated: boolean; isUsingCustom: boolean }) => boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -27,12 +26,12 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'statistics', label: 'Statistics', icon: BarChart3, isActive: ({ activeTab }) => activeTab === 'statistics' },
   { id: 'prediction', label: 'Prediction', icon: BrainCircuit, isActive: ({ activeTab }) => activeTab === 'prediction' },
   { id: 'reroute', label: 'Reroute Log', icon: ScrollText, isActive: ({ activeTab }) => activeTab === 'reroute' },
-  { id: 'generator', label: 'Network Generator', icon: Boxes, isActive: ({ activeTab, isUsingGenerated }) => activeTab === 'generator' || isUsingGenerated },
+  { id: 'generator', label: 'Network Generator', icon: Boxes, isActive: ({ activeTab, isUsingGenerated, isUsingCustom }) => activeTab === 'generator' || isUsingGenerated || isUsingCustom },
   { id: 'surge', label: 'Traffic Simulator', icon: Radar, isActive: ({ activeTab }) => activeTab === 'surge' },
 ];
 
 interface TopologyMode {
-  id: 'dashboard' | 'custom';
+  id: 'dashboard';
   label: string;
   icon: LucideIcon;
   isActive: (context: { isUsingCustom: boolean; isUsingGenerated: boolean }) => boolean;
@@ -40,7 +39,6 @@ interface TopologyMode {
 
 const TOPOLOGY_MODES: TopologyMode[] = [
   { id: 'dashboard', label: 'Dashboard Topology', icon: Network, isActive: ({ isUsingCustom, isUsingGenerated }) => !isUsingCustom && !isUsingGenerated },
-  { id: 'custom', label: 'Custom Topology', icon: GitBranch, isActive: ({ isUsingCustom }) => isUsingCustom },
 ];
 
 export default function Home() {
@@ -153,7 +151,7 @@ export default function Home() {
 
   const handleTopologyModeSelect = (mode: TopologyMode['id']) => {
     setActiveTab('monitor');
-    setIsUsingCustom(mode === 'custom');
+    setIsUsingCustom(false);
   };
 
   useEffect(() => {
@@ -178,7 +176,7 @@ export default function Home() {
     setIsCommandOpen(false);
   };
 
-  const navContext = useMemo(() => ({ activeTab, isUsingGenerated }), [activeTab, isUsingGenerated]);
+  const navContext = useMemo(() => ({ activeTab, isUsingGenerated, isUsingCustom }), [activeTab, isUsingGenerated, isUsingCustom]);
   const topologyContext = useMemo(() => ({ isUsingCustom, isUsingGenerated }), [isUsingCustom, isUsingGenerated]);
 
   return (
@@ -417,8 +415,7 @@ export default function Home() {
 
           {/* Monitor Tab */}
           <TabsContent value="monitor" className="mt-0 min-w-0 flex-1 space-y-6">
-            {/* Dashboard/Custom Topology Mode */}
-            {!isUsingCustom ? (
+            {/* Dashboard Topology */}
               <Card className="glass rounded-2xl border-white/10 bg-slate-900/30 backdrop-blur-xl">
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -569,14 +566,6 @@ export default function Home() {
                   </div>
                 </CardContent>
               </Card>
-            ) : (
-              <div className="space-y-4">
-                <div className="glass rounded-xl border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-3 text-sm text-cyan-100 backdrop-blur-md">
-                  Build or edit your network here, then choose <span className="font-semibold">Dashboard Topology</span> to see the same nodes and links animated with live telemetry.
-                </div>
-                <CustomTopologyBuilder />
-              </div>
-            )}
 
             {/* Traffic Heatmap */}
             <Card className="glass rounded-2xl border-white/10 bg-slate-900/30 backdrop-blur-xl">
